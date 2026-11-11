@@ -156,33 +156,18 @@ def extract_text(uploaded_file):
         return uploaded_file.read().decode("utf-8", errors="ignore")
     return ""
 
-# Скачиваем шрифт для PDF (кириллица)
-FONT_PATH = "DejaVuSans.ttf"
-if not os.path.exists(FONT_PATH):
-    font_url = "https://github.com/dolbydu/font/raw/master/unicode/DejaVuSans.ttf"
-    r = requests.get(font_url)
-    with open(FONT_PATH, "wb") as f:
-        f.write(r.content)
-
 def generate_pdf(text):
     font_path = "DejaVuSans.ttf"
-    # Используем надежный CDN вместо GitHub
-    font_url = "https://cdn.jsdelivr.net/gh/dolbydu/font@master/unicode/DejaVuSans.ttf"
     
-    # Скачиваем шрифт, если его нет или если файл поврежден (меньше 10 КБ)
-    if not os.path.exists(font_path) or os.path.getsize(font_path) < 10000:
-        try:
-            r = requests.get(font_url, timeout=10)
-            if r.status_code == 200 and len(r.content) > 10000:
-                with open(font_path, "wb") as f:
-                    f.write(r.content)
-        except Exception as e:
-            st.error(f"Ошибка загрузки шрифта: {e}")
+    # Проверяем, что файл на месте
+    if not os.path.exists(font_path):
+        st.error("Ошибка: файл шрифта не найден в репозитории.")
+        return b""
 
     pdf = FPDF()
     pdf.add_page()
     
-    # Добавляем шрифт (в новых версиях fpdf2 параметр uni=True не нужен)
+    # Добавляем шрифт
     pdf.add_font("DejaVu", "", font_path)
     pdf.set_font("DejaVu", "", 12)
     
