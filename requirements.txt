@@ -2,3 +2,4 @@ streamlit==1.40.0
 google-genai>=2.31.0
 pypdf==5.1.0
 python-docx==1.1.2
+st-paywall
