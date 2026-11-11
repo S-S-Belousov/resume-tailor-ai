@@ -22,10 +22,19 @@ st.set_page_config(page_title="ResumeTailor AI", page_icon="📄", layout="cente
 
 TEXTS = {
     "ru": {
-        "login_title": "🔐 Вход в ResumeTailor AI",
-        "login_info": "Войдите или создайте аккаунт. При регистрации вам доступно 2 бесплатных анализа.",
+        # --- Лендинг и вход ---
+        "hero_title": "Узнайте, почему ваше резюме игнорируют",
+        "hero_subtitle": "Более 75% резюме отсеиваются роботами (ATS) еще до просмотра рекрутером. Загрузите резюме и вакансию — наш ИИ покажет слабые места и перепишет текст так, чтобы вы получили собеседование.",
+        "feat_1": "🎯 **Оценка соответствия:** узнайте свой шанс пройти ATS-фильтр (от 0 до 100%).",
+        "feat_2": "🔑 **Ключевые слова:** найдите навыки, которые требует работодатель.",
+        "feat_3": "📝 **Улучшенное резюме:** ИИ перепишет опыт в формате «действие → результат».",
+        "feat_4": "✉️ **Сопроводительное письмо:** готовый текст под конкретную вакансию.",
+        "feat_5": "📥 **Скачивание в PDF:** получите аккуратный файл для отправки.",
+        "login_form_title": "Вход или Регистрация",
+        "login_form_info": "Новым пользователям доступно 2 бесплатных анализа.",
         "email": "Ваш Email", "password": "Ваш Пароль",
         "btn_login": "Войти / Зарегистрироваться", "forgot_password": "Забыли пароль?",
+        # --- Сброс пароля ---
         "reset_title": "🔑 Сброс пароля",
         "reset_step1": "Введите email, указанный при регистрации. Мы отправим вам код для сброса.",
         "send_code": "Отправить код", "code_sent": "Код отправлен! Проверьте почту.",
@@ -37,6 +46,7 @@ TEXTS = {
         "error_code": "Неверный или просроченный код.",
         "error_fill": "Пожалуйста, заполните все поля.",
         "error_pwd": "Неверный пароль.", "success_reg": "Аккаунт создан!",
+        # --- Приложение ---
         "logout": "Выйти из аккаунта", "logged_as": "Вы вошли как",
         "how_it_works": "**Как это работает:** загрузи резюме → вставь текст вакансии → выбери тон → нажми «Анализировать».",
         "left": "Осталось бесплатно", "upload": "1️⃣ Загрузите резюме (PDF, DOCX или TXT)",
@@ -55,10 +65,19 @@ TEXTS = {
         "example_info": "Загружен пример резюме IT-специалиста. Вы можете нажать «Анализировать» или изменить текст вакансии справа."
     },
     "en": {
-        "login_title": "🔐 Login to ResumeTailor AI",
-        "login_info": "Sign in or create an account. You get 2 free analyses upon registration.",
+        # --- Лендинг и вход ---
+        "hero_title": "Find out why your resume is being ignored",
+        "hero_subtitle": "Over 75% of resumes are filtered out by ATS bots before a recruiter even sees them. Upload your resume and a job description — our AI will highlight weaknesses and rewrite it to help you land an interview.",
+        "feat_1": "🎯 **Match Score:** find out your chance to pass the ATS filter (0-100%).",
+        "feat_2": "🔑 **Keywords:** discover the skills the employer is looking for.",
+        "feat_3": "📝 **Improved Resume:** AI rewrites your experience into an 'action → result' format.",
+        "feat_4": "✉️ **Cover Letter:** a ready-to-use text tailored to the specific job.",
+        "feat_5": "📥 **PDF Download:** get a clean file ready to be sent.",
+        "login_form_title": "Login or Register",
+        "login_form_info": "New users get 2 free analyses.",
         "email": "Your Email", "password": "Your Password",
         "btn_login": "Login / Register", "forgot_password": "Forgot password?",
+        # --- Сброс пароля ---
         "reset_title": "🔑 Reset Password",
         "reset_step1": "Enter your registered email. We will send you a reset code.",
         "send_code": "Send Code", "code_sent": "Code sent! Check your email.",
@@ -70,6 +89,7 @@ TEXTS = {
         "error_code": "Invalid or expired code.",
         "error_fill": "Please fill in all fields.",
         "error_pwd": "Incorrect password.", "success_reg": "Account created!",
+        # --- Приложение ---
         "logout": "Log out", "logged_as": "Logged in as",
         "how_it_works": "**How it works:** upload resume → paste job description → choose tone → click «Analyze».",
         "left": "Free tries left", "upload": "1️⃣ Upload your resume (PDF, DOCX or TXT)",
@@ -93,7 +113,7 @@ if 'lang' not in st.session_state:
     st.session_state.lang = "ru"
 t = TEXTS[st.session_state.lang]
 
-# Тестовые данные для кнопки "Попробовать пример"
+# Тестовые данные
 EXAMPLE_RESUME_RU = """Иван Иванов
 Python-разработчик (Middle)
 Опыт работы:
@@ -101,7 +121,6 @@ Python-разработчик (Middle)
 - ИП Петров (2018-2020): Верстка сайтов HTML/CSS/JS.
 Навыки: Python, Django, SQL, Git, Docker, HTML, CSS.
 Образование: МГТУ им. Баумана, Прикладная математика и информатика."""
-
 EXAMPLE_JOB_RU = """Ищем Python-разработчика.
 Требования:
 - Опыт коммерческой разработки на Python от 2 лет.
@@ -110,7 +129,6 @@ EXAMPLE_JOB_RU = """Ищем Python-разработчика.
 - Понимание принципов REST API.
 - Опыт написания unit-тестов (pytest).
 Будет плюсом: знание Docker и Kubernetes."""
-
 EXAMPLE_RESUME_EN = """John Doe
 Python Developer
 Experience:
@@ -118,7 +136,6 @@ Experience:
 - Web developer (2018-2020) using HTML/CSS/JS.
 Skills: Python, Django, SQL, Git, Docker, HTML, CSS.
 Education: BS in Computer Science."""
-
 EXAMPLE_JOB_EN = """We are looking for a Python Developer.
 Requirements:
 - 2+ years of commercial experience with Python.
@@ -197,38 +214,47 @@ def extract_text(uploaded_file):
 
 def generate_pdf(text):
     font_path = "DejaVuSans.ttf"
-    
     if not os.path.exists(font_path):
         st.error("Ошибка: файл шрифта не найден в репозитории.")
         return b""
-
     pdf = FPDF()
     pdf.add_page()
     pdf.add_font("DejaVu", "", font_path)
     pdf.set_font("DejaVu", "", 12)
-    
     clean_text = text.replace("##", "").replace("**", "").replace("###", "")
     pdf.multi_cell(0, 8, text=clean_text)
-    
     return bytes(pdf.output())
 
 # =====================================================
-# 4. АВТОРИЗАЦИЯ И СБРОС ПАРОЛЯ
+# 4. АВТОРИЗАЦИЯ И СБРОС ПАРОЛЯ (НОВЫЙ ЛЕНДИНГ)
 # =====================================================
 if not st.session_state.user_email:
-    st.title(t["login_title"])
-    
     if 'reset_step' not in st.session_state:
         st.session_state.reset_step = 0
 
     if st.session_state.reset_step == 0:
-        st.info(t["login_info"])
-        email_input = st.text_input(t["email"])
-        password_input = st.text_input(t["password"], type="password")
+        # Создаем две колонки: слева реклама, справа форма
+        col_left, col_right = st.columns([1.3, 1], gap="large")
         
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            if st.button(t["btn_login"], type="primary"):
+        with col_left:
+            st.title("📄 ResumeTailor AI")
+            st.markdown(f"### {t['hero_title']}")
+            st.markdown(t['hero_subtitle'])
+            st.write("") # Отступ
+            st.markdown(t['feat_1'])
+            st.markdown(t['feat_2'])
+            st.markdown(t['feat_3'])
+            st.markdown(t['feat_4'])
+            st.markdown(t['feat_5'])
+            
+        with col_right:
+            st.subheader(t["login_form_title"])
+            st.info(t["login_form_info"])
+            
+            email_input = st.text_input(t["email"])
+            password_input = st.text_input(t["password"], type="password")
+            
+            if st.button(t["btn_login"], type="primary", use_container_width=True):
                 if not email_input or not password_input:
                     st.error(t["error_fill"])
                 else:
@@ -254,9 +280,8 @@ if not st.session_state.user_email:
                         st.query_params["user"] = email_input
                         st.success(t["success_reg"])
                         st.rerun()
-        
-        with col2:
-            if st.button(t["forgot_password"]):
+            
+            if st.button(t["forgot_password"], use_container_width=True):
                 st.session_state.reset_step = 1
                 st.rerun()
 
@@ -465,18 +490,16 @@ with col2:
 
 st.divider()
 
-# НОВОЕ: Галочка для теста
 use_example = st.checkbox(t["try_example"], value=False)
 
 if use_example:
     st.info(t["example_info"])
-    # Берем тестовые данные в зависимости от языка
     example_resume = EXAMPLE_RESUME_RU if st.session_state.lang == "ru" else EXAMPLE_RESUME_EN
     example_job = EXAMPLE_JOB_RU if st.session_state.lang == "ru" else EXAMPLE_JOB_EN
     
     uploaded = None
     job_text = st.text_area(t["job_desc"], value=example_job, height=200)
-    resume_text = example_resume # Передаем текст напрямую
+    resume_text = example_resume
 else:
     uploaded = st.file_uploader(t["upload"], type=["pdf", "docx", "txt"])
     job_text = st.text_area(t["job_desc"], height=200)
@@ -488,7 +511,6 @@ if disabled:
     st.warning(t["warn_limit"])
 
 if st.button(t["btn_analyze"], type="primary", disabled=disabled):
-    # Если галочка не стоит, читаем файл
     if not use_example:
         if not uploaded:
             st.error(t["err_upload"])
