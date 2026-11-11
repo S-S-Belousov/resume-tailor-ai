@@ -1,44 +1,47 @@
-# =====================================================
-# ResumeTailor AI — MVP (обновлено для google-genai)
-# =====================================================
-
 import re
 import streamlit as st
 from google import genai
 from pypdf import PdfReader
 from docx import Document
+from st_paywall import add_auth  # <-- НОВОЕ
 
-# ---------- 1. НАСТРОЙКА СТРАНИЦЫ ----------
-st.set_page_config(
-    page_title="ResumeTailor AI",
-    page_icon="📄",
-    layout="centered"
-)
+st.set_page_config(page_title="ResumeTailor AI", page_icon="📄", layout="centered")
 
-# ---------- 2. ПОДКЛЮЧЕНИЕ НЕЙРОСЕТИ (НОВЫЙ SDK) ----------
+# ---------- АВТОРИЗАЦИЯ И ПОДПИСКА ----------
+# add_auth(required=False) означает: не блокировать приложение, если нет подписки.
+# После вызова в st.session_state появятся:
+# - st.session_state.email (email пользователя)
+# - st.session_state.user_subscribed (True/False)
+add_auth(required=False)
+
+# ---------- ПОДКЛЮЧЕНИЕ НЕЙРОСЕТИ ----------
 try:
     GEMINI_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=GEMINI_KEY)
 except Exception:
-    st.error(
-        "⚠️ Не найден API-ключ. Добавь GEMINI_API_KEY в Secrets на Streamlit Cloud "
-        "(см. инструкцию Этапа 3)."
-    )
+    st.error("⚠️ Не найден API-ключ GEMINI_API_KEY.")
     st.stop()
 
 MODEL_NAME = "gemini-3.8-flash"
 
-# ---------- 3. ЛИМИТЫ ДЛЯ БЕСПЛАТНОГО ТАРИФА ----------
+# ---------- ЛОГИКА ЛИМИТОВ ----------
 FREE_LIMIT = 2
 
+# Инициализация счётчика в session_state, если его нет
 if "used" not in st.session_state:
     st.session_state.used = 0
-if "results" not in st.session_state:
-    st.session_state.results = None
 
-# ---------- 4. ФУНКЦИЯ ЧТЕНИЯ ФАЙЛА ----------
+# Если пользователь подписан — лимита нет
+if st.session_state.get("user_subscribed", False):
+    disabled = False
+    left_text = "∞"
+else:
+    left = max(FREE_LIMIT - st.session_state.used, 0)
+    disabled = left <= 0
+    left_text = f"{left} / {FREE_LIMIT}"
+
+# ... (функции extract_text и analyze остаются без изменений) ...
 def extract_text(uploaded_file):
-    """Достаёт текст из PDF / DOCX / TXT."""
     name = uploaded_file.name.lower()
     if name.endswith(".pdf"):
         reader = PdfReader(uploaded_file)
@@ -50,73 +53,49 @@ def extract_text(uploaded_file):
         return uploaded_file.read().decode("utf-8", errors="ignore")
     return ""
 
-# ---------- 5. ФУНКЦИЯ АНАЛИЗА (НОВЫЙ SDK) ----------
 def analyze(resume_text, job_text):
-    """Отправляет текст в Gemini и возвращает разбор в формате markdown."""
-    prompt = f"""Ты — эксперт по ATS-системам (Applicant Tracking Systems) и карьерный консультант.
-Проанализируй резюме кандидата и вакансию. Отвечай по-русски.
-
-=== РЕЗЮМЕ КАНДИДАТА ===
+    prompt = f"""Ты — эксперт по ATS-системам и карьерный консультант. Проанализируй резюме и вакансию. Отвечай по-русски.
+=== РЕЗЮМЕ ===
 {resume_text}
-
-=== ОПИСАНИЕ ВАКАНСИИ ===
+=== ВАКАНСИЯ ===
 {job_text}
-
-Верни ответ СТРОГО в таком формате (markdown):
-
+Верни ответ в markdown:
 ## 📊 Оценка соответствия
-Число от 0 до 100 и одно предложение вердикта. Пример: `72% — резюме неплохое, но не хватает ключевых технологий из вакансии.`
-
+Число от 0 до 100 и вердикт.
 ## 🔑 Ключевые слова из вакансии
-Список навыков/технологий/слов, которые важны для этой вакансии.
-
-## ✅ Что уже хорошо в резюме
-3–5 пунктов сильных сторон относительно вакансии.
-
-## ⚠️ Что нужно исправить или добавить
-3–7 конкретных рекомендаций (какие слова добавить, что переписать).
-
+Список.
+## ✅ Что уже хорошо
+3–5 пунктов.
+## ⚠️ Что исправить
+3–7 рекомендаций.
 ## 📝 Улучшенная версия резюме
-Перепиши резюме так, чтобы оно лучше проходило ATS: добавь недостающие ключевые слова,
-сформулируй опыт в формате «действие → результат». НЕ выдумывай опыт, которого нет.
-
+Перепиши, добавив ключевые слова, но не выдумывай опыт.
 ## ✉️ Сопроводительное письмо
-Короткое (150–200 слов) письмо под эту вакансию, от первого лица.
+150–200 слов.
 """
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt
-    )
+    response = client.models.generate_content(model=MODEL_NAME, contents=prompt)
     return response.text
 
-# ---------- 6. ИНТЕРФЕЙС (БЕЗ ИЗМЕНЕНИЙ) ----------
+# ---------- ИНТЕРФЕЙС ----------
 st.title("📄 ResumeTailor AI")
-st.caption("Узнай, проходит ли твоё резюме ATS-фильтр, и получи улучшенную версию за 30 секунд.")
+
+# Показываем email, если вошёл
+if st.session_state.get("email"):
+    st.caption(f"Вы вошли как: {st.session_state.email}")
 
 col1, col2 = st.columns([3, 1])
 with col1:
     st.markdown("**Как это работает:** загрузи резюме → вставь текст вакансии → нажми «Анализировать».")
 with col2:
-    left = max(FREE_LIMIT - st.session_state.used, 0)
-    st.metric("Осталось бесплатно", f"{left} / {FREE_LIMIT}")
+    st.metric("Осталось бесплатно", left_text)
 
 st.divider()
 
-uploaded = st.file_uploader(
-    "1️⃣ Загрузите резюме (PDF, DOCX или TXT)",
-    type=["pdf", "docx", "txt"]
-)
-
-job_text = st.text_area(
-    "2️⃣ Вставьте текст вакансии",
-    height=250,
-    placeholder="Скопируйте сюда описание вакансии с hh.ru, LinkedIn и т.д."
-)
-
-disabled = st.session_state.used >= FREE_LIMIT
+uploaded = st.file_uploader("1️⃣ Загрузите резюме (PDF, DOCX или TXT)", type=["pdf", "docx", "txt"])
+job_text = st.text_area("2️⃣ Вставьте текст вакансии", height=250)
 
 if disabled:
-    st.warning("🚫 Бесплатные попытки закончились. Ниже — кнопка для оформления подписки.")
+    st.warning("🚫 Бесплатные попытки закончились. Оформите подписку Pro ниже.")
 
 if st.button("🔍 Анализировать", type="primary", disabled=disabled):
     if not uploaded:
@@ -124,43 +103,41 @@ if st.button("🔍 Анализировать", type="primary", disabled=disable
     elif not job_text.strip():
         st.error("Вставьте текст вакансии.")
     else:
-        with st.spinner("Нейросеть читает резюме и вакансию... ~15 секунд"):
+        with st.spinner("Нейросеть читает... ~15 секунд"):
             try:
                 resume_text = extract_text(uploaded)
                 if not resume_text.strip():
-                    st.error("Не удалось прочитать текст из файла. Попробуйте PDF/DOCX/TXT с текстом (не сканы-картинки).")
+                    st.error("Не удалось прочитать текст из файла.")
                 else:
                     result = analyze(resume_text, job_text)
                     st.session_state.results = result
-                    st.session_state.used += 1
+                    # Увеличиваем счётчик, только если нет подписки
+                    if not st.session_state.get("user_subscribed", False):
+                        st.session_state.used += 1
                     st.toast("✅ Анализ готов!")
                     st.rerun()
             except Exception as e:
-                st.error(f"Ошибка при обращении к нейросети: {e}")
+                st.error(f"Ошибка: {e}")
 
-# ---------- 7. ВЫВОД РЕЗУЛЬТАТА ----------
-if st.session_state.results:
+# ---------- ВЫВОД РЕЗУЛЬТАТА ----------
+if st.session_state.get("results"):
     st.divider()
     st.markdown(st.session_state.results)
-
     match = re.search(r"(\d{1,3})\s*%", st.session_state.results)
     if match:
         score = min(int(match.group(1)), 100)
         st.divider()
-        st.markdown(f"**Оценка соответствия ATS:** {score}%")
+        st.markdown(f"**Оценка ATS:** {score}%")
         st.progress(score / 100)
+    st.download_button("💾 Скачать отчёт (.md)", data=st.session_state.results, file_name="resume_analysis.md", mime="text/markdown")
 
-    st.download_button(
-        "💾 Скачать отчёт (.md)",
-        data=st.session_state.results,
-        file_name="resume_analysis.md",
-        mime="text/markdown"
-    )
-
-# ---------- 8. ЗАГЛУШКА ДЛЯ ОПЛАТЫ ----------
+# ---------- БЛОК ОПЛАТЫ (ST-PAYWALL) ----------
 st.divider()
-st.markdown("### 💎 Хотите больше?")
-st.markdown(
-    "Оформите подписку **Pro** — неограниченные анализы и приоритетная скорость.  \n"
-    "*(Кнопка оплаты появится здесь на Этапе 4.)*"
-)
+if st.session_state.get("user_subscribed", False):
+    st.success("✅ У вас активна подписка Pro. Спасибо за поддержку!")
+else:
+    st.markdown("### 💎 Хотите больше?")
+    st.markdown("Оформите подписку **Pro** — неограниченные анализы.")
+    # Кнопка ведёт на ссылку оплаты, которую мы создали в Stripe
+    stripe_link = st.secrets.get("STRIPE_LINK", "#")
+    st.link_button("Оформить подписку Pro ($9/мес)", url=stripe_link, type="primary")
