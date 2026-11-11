@@ -161,7 +161,6 @@ if not st.session_state.user_email:
         st.session_state.reset_step = 0
 
     if st.session_state.reset_step == 0:
-        # --- ВХОД ---
         st.info(t["login_info"])
         email_input = st.text_input(t["email"])
         password_input = st.text_input(t["password"], type="password")
@@ -189,7 +188,7 @@ if not st.session_state.user_email:
                         else:
                             st.error(t["error_pwd"])
                     else:
-                        supabase.table('user_subscriptions').insert({'email': email_input, 'password': hashed_pwd, 'is_pro': False}).execute()
+                        supabase.table('user_subscriptions').insert({'email': email_input, 'password': hashed_pwd, 'is_pro': False, 'free_uses': 0}).execute()
                         st.session_state.user_email = email_input
                         st.query_params["user"] = email_input
                         st.success(t["success_reg"])
@@ -201,7 +200,6 @@ if not st.session_state.user_email:
                 st.rerun()
 
     elif st.session_state.reset_step == 1:
-        # --- СБРОС: ШАГ 1 (ВВОД EMAIL) ---
         st.subheader(t["reset_title"])
         st.info(t["reset_step1"])
         
@@ -234,7 +232,6 @@ if not st.session_state.user_email:
             st.rerun()
 
     elif st.session_state.reset_step == 2:
-        # --- СБРОС: ШАГ 2 (ВВОД КОДА И НОВОГО ПАРОЛЯ) ---
         st.subheader(t["reset_title"])
         st.info(t["reset_step2"])
         
@@ -295,7 +292,7 @@ with st.sidebar:
         st.rerun()
         
     st.divider()
-    st.link_button(t["feedback"], "https://vk.ru/s.belousov")
+    st.link_button(t["feedback"], "https://vk.ru/s.belousov") 
     
     st.divider()
     if st.button(t["logout"], use_container_width=True):
@@ -304,15 +301,19 @@ with st.sidebar:
         st.rerun()
 
 # =====================================================
-# 6. ПРОВЕРКА ПОДПИСКИ
+# 6. ПРОВЕРКА ПОДПИСКИ И ЛИМИТОВ (ИЗ БАЗЫ)
 # =====================================================
-response = supabase.table('user_subscriptions').select('is_pro', 'valid_until').eq('email', USER_EMAIL).execute()
+# Теперь мы забираем из базы еще и колонку free_uses
+response = supabase.table('user_subscriptions').select('is_pro', 'valid_until', 'free_uses').eq('email', USER_EMAIL).execute()
 is_pro = False
 sub_end_date = ""
+free_uses = 0
 
 if len(response.data) > 0:
     user_data = response.data[0]
     valid_until_str = user_data.get('valid_until')
+    free_uses = user_data.get('free_uses', 0)
+    
     if user_data.get('is_pro') and valid_until_str:
         valid_until = datetime.fromisoformat(valid_until_str.replace('Z', '+00:00'))
         if valid_until > datetime.now(timezone.utc):
@@ -332,14 +333,13 @@ except Exception:
 MODEL_NAME = "gemini-3.8-flash"
 
 FREE_LIMIT = 2
-if "used" not in st.session_state:
-    st.session_state.used = 0
 
+# Логика лимитов теперь зависит от базы данных
 if is_pro:
     disabled = False
     left_text = "∞ (Pro)"
 else:
-    left = max(FREE_LIMIT - st.session_state.used, 0)
+    left = max(FREE_LIMIT - free_uses, 0)
     disabled = left <= 0
     left_text = f"{left} / {FREE_LIMIT}"
 
@@ -428,8 +428,11 @@ if st.button(t["btn_analyze"], type="primary", disabled=disabled):
                     output_lang = "Russian" if st.session_state.lang == "ru" else "English"
                     result = analyze(resume_text, job_text, output_lang, tone_selection)
                     st.session_state.results = result
+                    
+                    # САМОЕ ВАЖНОЕ: обновляем счетчик в базе данных, если это не PRO
                     if not is_pro:
-                        st.session_state.used += 1
+                        supabase.table('user_subscriptions').update({'free_uses': free_uses + 1}).eq('email', USER_EMAIL).execute()
+                        
                     st.toast(t["toast_ready"])
                     st.rerun()
             except Exception as e:
