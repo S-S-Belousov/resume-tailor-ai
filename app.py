@@ -23,10 +23,12 @@ TEXTS = {
         "success_reg": "Аккаунт создан!",
         "logout": "Выйти из аккаунта",
         "logged_as": "Вы вошли как",
-        "how_it_works": "**Как это работает:** загрузи резюме → вставь текст вакансии → нажми «Анализировать».",
+        "how_it_works": "**Как это работает:** загрузи резюме → вставь текст вакансии → выбери тон → нажми «Анализировать».",
         "left": "Осталось бесплатно",
         "upload": "1️⃣ Загрузите резюме (PDF, DOCX или TXT)",
         "job_desc": "2️⃣ Вставьте текст вакансии",
+        "tone": "3️⃣ Выберите стиль резюме",
+        "tone_options": ["Профессиональный", "Креативный", "Краткий", "Акцент на достижениях"],
         "btn_analyze": "🔍 Анализировать",
         "warn_limit": "🚫 Бесплатные попытки закончились. Оформите подписку Pro ниже.",
         "spinner": "Нейросеть читает... ~15 секунд",
@@ -36,11 +38,13 @@ TEXTS = {
         "toast_ready": "✅ Анализ готов!",
         "ats_score": "**Оценка ATS:**",
         "btn_download": "💾 Скачать отчёт (.md)",
+        "btn_copy": "📋 Нажмите на иконку справа, чтобы скопировать текст",
         "pro_active": "✅ У вас активна подписка Pro до",
         "pro_thanks": "Спасибо за поддержку!",
         "want_more": "### 💎 Хотите больше?",
         "pro_desc": "Оформите подписку **Pro** — неограниченные анализы.",
-        "btn_buy": "Оформить подписку Pro (490 ₽/мес)"
+        "btn_buy": "Оформить подписку Pro (499 ₽/мес)",
+        "feedback": "💬 Обратная связь"
     },
     "en": {
         "login_title": "🔐 Login to ResumeTailor AI",
@@ -53,10 +57,12 @@ TEXTS = {
         "success_reg": "Account created!",
         "logout": "Log out",
         "logged_as": "Logged in as",
-        "how_it_works": "**How it works:** upload resume → paste job description → click «Analyze».",
+        "how_it_works": "**How it works:** upload resume → paste job description → choose tone → click «Analyze».",
         "left": "Free tries left",
         "upload": "1️⃣ Upload your resume (PDF, DOCX or TXT)",
         "job_desc": "2️⃣ Paste the job description",
+        "tone": "3️⃣ Choose resume tone",
+        "tone_options": ["Professional", "Creative", "Concise", "Achievement-oriented"],
         "btn_analyze": "🔍 Analyze",
         "warn_limit": "🚫 Free tries exhausted. Please subscribe to Pro below.",
         "spinner": "AI is reading... ~15 seconds",
@@ -66,20 +72,35 @@ TEXTS = {
         "toast_ready": "✅ Analysis ready!",
         "ats_score": "**ATS Match Score:**",
         "btn_download": "💾 Download report (.md)",
+        "btn_copy": "📋 Click the icon on the right to copy",
         "pro_active": "✅ Your Pro subscription is active until",
         "pro_thanks": "Thank you for your support!",
         "want_more": "### 💎 Want more?",
         "pro_desc": "Subscribe to **Pro** — unlimited analyses.",
-        "btn_buy": "Subscribe to Pro ($9/mo)"
+        "btn_buy": "Subscribe to Pro ($5/mo)",
+        "feedback": "💬 Feedback"
     }
 }
 
-# Инициализация языка (по умолчанию русский)
 if 'lang' not in st.session_state:
     st.session_state.lang = "ru"
 t = TEXTS[st.session_state.lang]
 
-# ---------- 2. ПОДКЛЮЧЕНИЕ К SUPABASE ----------
+# ---------- 2. УПРАВЛЕНИЕ СЕССИЕЙ (COOKIES) ----------
+# Инициализируем менеджер куки на самом верху
+cookie_manager = stx.CookieManager(key="cookie_mgr")
+
+# Проверяем куки ПЕРЕД рендером страницы
+if 'user_email' not in st.session_state:
+    st.session_state.user_email = None
+
+if st.session_state.user_email is None:
+    saved_email = cookie_manager.get(cookie="rt_user_email")
+    if saved_email:
+        st.session_state.user_email = saved_email
+        st.rerun() # Принудительный перезапуск, чтобы сразу пустить в кабинет
+
+# ---------- 3. ПОДКЛЮЧЕНИЕ К SUPABASE ----------
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -91,19 +112,8 @@ except Exception as e:
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# ---------- 3. УПРАВЛЕНИЕ СЕССИЕЙ (COOKIES) ----------
-cookie_manager = stx.CookieManager(key="cookie_mgr")
-
-# Проверяем, есть ли email в cookie, если нет в session_state
-if 'user_email' not in st.session_state or not st.session_state.user_email:
-    # Ждем, пока куки загрузятся
-    if cookie_manager.get_all() is not None:
-        saved_email = cookie_manager.get(cookie="rt_user_email")
-        if saved_email:
-            st.session_state.user_email = saved_email
-
 # ---------- 4. АВТОРИЗАЦИЯ ----------
-if 'user_email' not in st.session_state or not st.session_state.user_email:
+if not st.session_state.user_email:
     st.title(t["login_title"])
     st.info(t["login_info"])
     
@@ -140,12 +150,11 @@ if 'user_email' not in st.session_state or not st.session_state.user_email:
 
 USER_EMAIL = st.session_state.user_email
 
-# ---------- 5. БОКОВАЯ ПАНЕЛЬ (ПРОФИЛЬ, ЯЗЫК, ВЫХОД) ----------
+# ---------- 5. БОКОВАЯ ПАНЕЛЬ ----------
 with st.sidebar:
     st.markdown(f"👤 **{t['logged_as']}:**\n{USER_EMAIL}")
     st.divider()
     
-    # Переключатель языка
     lang_choice = st.radio("🌐 Language / Язык", ["RU", "EN"], index=0 if st.session_state.lang == "ru" else 1, horizontal=True)
     if lang_choice == "RU" and st.session_state.lang != "ru":
         st.session_state.lang = "ru"
@@ -155,9 +164,11 @@ with st.sidebar:
         st.rerun()
         
     st.divider()
+    st.link_button(t["feedback"], "https://t.me/your_telegram_username") # Замените на свой ник в ТГ или mailto
     
+    st.divider()
     if st.button(t["logout"], use_container_width=True):
-        st.session_state.user_email = ""
+        st.session_state.user_email = None
         cookie_manager.delete("rt_user_email")
         st.rerun()
 
@@ -211,9 +222,10 @@ def extract_text(uploaded_file):
         return uploaded_file.read().decode("utf-8", errors="ignore")
     return ""
 
-def analyze(resume_text, job_text, output_lang):
+def analyze(resume_text, job_text, output_lang, tone):
     prompt = f"""You are an ATS (Applicant Tracking Systems) expert and career consultant.
 Analyze the resume and the job description. YOU MUST ANSWER IN {output_lang.upper()}.
+The improved resume and cover letter must be written in a {tone} tone.
 
 === RESUME ===
 {resume_text}
@@ -236,10 +248,10 @@ Return the response STRICTLY in this markdown format (translate headers if outpu
 3–7 рекомендаций. / 3-7 recommendations.
 
 ## 📝 Улучшенная версия резюме / Improved Resume Version
-Перепиши резюме, добавив ключевые слова. / Rewrite the resume, adding keywords.
+Перепиши резюме, добавив ключевые слова, используя {tone} tone. / Rewrite the resume, adding keywords, using {tone} tone.
 
 ## ✉️ Сопроводительное письмо / Cover Letter
-150–200 слов. / 150-200 words.
+150–200 слов, {tone} tone. / 150-200 words, {tone} tone.
 """
     response = client.models.generate_content(model=MODEL_NAME, contents=prompt)
     return response.text
@@ -256,7 +268,10 @@ with col2:
 st.divider()
 
 uploaded = st.file_uploader(t["upload"], type=["pdf", "docx", "txt"])
-job_text = st.text_area(t["job_desc"], height=250)
+job_text = st.text_area(t["job_desc"], height=200)
+
+# Выбор тона
+tone_selection = st.selectbox(t["tone"], t["tone_options"])
 
 if disabled:
     st.warning(t["warn_limit"])
@@ -273,9 +288,8 @@ if st.button(t["btn_analyze"], type="primary", disabled=disabled):
                 if not resume_text.strip():
                     st.error(t["err_read"])
                 else:
-                    # Выбираем язык ответа для ИИ
                     output_lang = "Russian" if st.session_state.lang == "ru" else "English"
-                    result = analyze(resume_text, job_text, output_lang)
+                    result = analyze(resume_text, job_text, output_lang, tone_selection)
                     st.session_state.results = result
                     if not is_pro:
                         st.session_state.used += 1
@@ -288,13 +302,21 @@ if st.button(t["btn_analyze"], type="primary", disabled=disabled):
 if st.session_state.get("results"):
     st.divider()
     st.markdown(st.session_state.results)
+    
     match = re.search(r"(\d{1,3})\s*%", st.session_state.results)
     if match:
         score = min(int(match.group(1)), 100)
         st.divider()
         st.markdown(f"{t['ats_score']} {score}%")
         st.progress(score / 100)
-    st.download_button(t["btn_download"], data=st.session_state.results, file_name="resume_analysis.md", mime="text/markdown")
+    
+    # НОВОЕ: Скачивание и копирование
+    col_dl, col_empty = st.columns([1, 2])
+    with col_dl:
+        st.download_button(t["btn_download"], data=st.session_state.results, file_name="resume_analysis.md", mime="text/markdown")
+    
+    st.markdown(t["btn_copy"])
+    st.code(st.session_state.results, language="markdown") # Блок с кнопкой копирования
 
 # ---------- 12. ОПЛАТА ----------
 st.divider()
