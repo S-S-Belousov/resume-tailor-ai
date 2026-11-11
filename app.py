@@ -295,8 +295,7 @@ with st.sidebar:
         st.rerun()
         
     st.divider()
-    # Замените ссылку ниже на ваш Telegram или почту
-    st.link_button(t["feedback"], "https://t.me/your_telegram_username") 
+    st.link_button(t["feedback"], "https://vk.ru/s.belousov")
     
     st.divider()
     if st.button(t["logout"], use_container_width=True):
