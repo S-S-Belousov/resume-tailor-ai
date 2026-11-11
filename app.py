@@ -319,7 +319,18 @@ def extract_text(uploaded_file):
         return "\n".join((page.extract_text() or "") for page in reader.pages)
     if name.endswith(".docx"):
         doc = Document(uploaded_file)
-        return "\n".join(p.text for p in doc.paragraphs)
+        text_parts = []
+        # Читаем обычные абзацы
+        for p in doc.paragraphs:
+            if p.text.strip():
+                text_parts.append(p.text)
+        # Читаем таблицы (часто резюме сверстаны ими)
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text.strip():
+                        text_parts.append(cell.text)
+        return "\n".join(text_parts)
     if name.endswith(".txt"):
         return uploaded_file.read().decode("utf-8", errors="ignore")
     return ""
