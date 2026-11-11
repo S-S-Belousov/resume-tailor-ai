@@ -357,7 +357,10 @@ if not st.session_state.user_email:
         if st.button(t["btn_back"]):
             st.session_state.reset_step = 0
             st.rerun()
-
+    # Политика конфиденциальности
+    st.write("---")
+    st.caption("🔒 Политика конфиденциальности: Мы используем ваш Email исключительно для входа в аккаунт. Мы не передаем ваши данные третьим лицам. Загруженные файлы резюме обрабатываются нейросетью и не сохраняются на наших серверах.")
+    
     st.stop()
 
 USER_EMAIL = st.session_state.user_email
