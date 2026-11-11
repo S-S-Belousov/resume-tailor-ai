@@ -165,18 +165,34 @@ if not os.path.exists(FONT_PATH):
         f.write(r.content)
 
 def generate_pdf(text):
+    font_path = "DejaVuSans.ttf"
+    # Используем надежный CDN вместо GitHub
+    font_url = "https://cdn.jsdelivr.net/gh/dolbydu/font@master/unicode/DejaVuSans.ttf"
+    
+    # Скачиваем шрифт, если его нет или если файл поврежден (меньше 10 КБ)
+    if not os.path.exists(font_path) or os.path.getsize(font_path) < 10000:
+        try:
+            r = requests.get(font_url, timeout=10)
+            if r.status_code == 200 and len(r.content) > 10000:
+                with open(font_path, "wb") as f:
+                    f.write(r.content)
+        except Exception as e:
+            st.error(f"Ошибка загрузки шрифта: {e}")
+
     pdf = FPDF()
     pdf.add_page()
-    pdf.add_font('DejaVu', '', FONT_PATH, uni=True)
-    pdf.set_font('DejaVu', '', 12)
+    
+    # Добавляем шрифт (в новых версиях fpdf2 параметр uni=True не нужен)
+    pdf.add_font("DejaVu", "", font_path)
+    pdf.set_font("DejaVu", "", 12)
     
     # Убираем markdown-символы для красивого текста
     clean_text = text.replace("##", "").replace("**", "").replace("###", "")
     
-    pdf.multi_cell(0, 8, txt=clean_text)
+    pdf.multi_cell(0, 8, text=clean_text)
     
     # Возвращаем байты PDF файла
-    return bytes(pdf.output(dest='S'))
+    return bytes(pdf.output())
 
 # =====================================================
 # 4. АВТОРИЗАЦИЯ И СБРОС ПАРОЛЯ
