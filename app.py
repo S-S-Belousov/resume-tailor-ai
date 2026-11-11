@@ -1,12 +1,10 @@
 # =====================================================
-# ResumeTailor AI — MVP
-# Приложение для анализа резюме под ATS-системы
+# ResumeTailor AI — MVP (обновлено для google-genai)
 # =====================================================
 
 import re
-import io
 import streamlit as st
-import google.generativeai as genai
+from google import genai
 from pypdf import PdfReader
 from docx import Document
 
@@ -17,11 +15,10 @@ st.set_page_config(
     layout="centered"
 )
 
-# ---------- 2. ПОДКЛЮЧЕНИЕ НЕЙРОСЕТИ ----------
-# Ключ берём из секретов Streamlit (настроим на Этапе 3)
+# ---------- 2. ПОДКЛЮЧЕНИЕ НЕЙРОСЕТИ (НОВЫЙ SDK) ----------
 try:
     GEMINI_KEY = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=GEMINI_KEY)
+    client = genai.Client(api_key=GEMINI_KEY)
 except Exception:
     st.error(
         "⚠️ Не найден API-ключ. Добавь GEMINI_API_KEY в Secrets на Streamlit Cloud "
@@ -29,10 +26,10 @@ except Exception:
     )
     st.stop()
 
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "gemini-3.8-flash"
 
 # ---------- 3. ЛИМИТЫ ДЛЯ БЕСПЛАТНОГО ТАРИФА ----------
-FREE_LIMIT = 2  # сколько бесплатных анализов даём одному пользователю
+FREE_LIMIT = 2
 
 if "used" not in st.session_state:
     st.session_state.used = 0
@@ -53,11 +50,9 @@ def extract_text(uploaded_file):
         return uploaded_file.read().decode("utf-8", errors="ignore")
     return ""
 
-# ---------- 5. ФУНКЦИЯ АНАЛИЗА ----------
+# ---------- 5. ФУНКЦИЯ АНАЛИЗА (НОВЫЙ SDK) ----------
 def analyze(resume_text, job_text):
     """Отправляет текст в Gemini и возвращает разбор в формате markdown."""
-    model = genai.GenerativeModel(MODEL_NAME)
-
     prompt = f"""Ты — эксперт по ATS-системам (Applicant Tracking Systems) и карьерный консультант.
 Проанализируй резюме кандидата и вакансию. Отвечай по-русски.
 
@@ -88,14 +83,16 @@ def analyze(resume_text, job_text):
 ## ✉️ Сопроводительное письмо
 Короткое (150–200 слов) письмо под эту вакансию, от первого лица.
 """
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(
+        model=MODEL_NAME,
+        contents=prompt
+    )
     return response.text
 
-# ---------- 6. ИНТЕРФЕЙС ----------
+# ---------- 6. ИНТЕРФЕЙС (БЕЗ ИЗМЕНЕНИЙ) ----------
 st.title("📄 ResumeTailor AI")
 st.caption("Узнай, проходит ли твоё резюме ATS-фильтр, и получи улучшенную версию за 30 секунд.")
 
-# Колонка с информацией о лимитах
 col1, col2 = st.columns([3, 1])
 with col1:
     st.markdown("**Как это работает:** загрузи резюме → вставь текст вакансии → нажми «Анализировать».")
@@ -105,20 +102,17 @@ with col2:
 
 st.divider()
 
-# Загрузка файла
 uploaded = st.file_uploader(
     "1️⃣ Загрузите резюме (PDF, DOCX или TXT)",
     type=["pdf", "docx", "txt"]
 )
 
-# Текст вакансии
 job_text = st.text_area(
     "2️⃣ Вставьте текст вакансии",
     height=250,
     placeholder="Скопируйте сюда описание вакансии с hh.ru, LinkedIn и т.д."
 )
 
-# Кнопка запуска
 disabled = st.session_state.used >= FREE_LIMIT
 
 if disabled:
@@ -148,7 +142,6 @@ if st.session_state.results:
     st.divider()
     st.markdown(st.session_state.results)
 
-    # Извлекаем процент из ответа, чтобы показать прогресс-бар
     match = re.search(r"(\d{1,3})\s*%", st.session_state.results)
     if match:
         score = min(int(match.group(1)), 100)
@@ -156,7 +149,6 @@ if st.session_state.results:
         st.markdown(f"**Оценка соответствия ATS:** {score}%")
         st.progress(score / 100)
 
-    # Кнопка скачивания результата
     st.download_button(
         "💾 Скачать отчёт (.md)",
         data=st.session_state.results,
