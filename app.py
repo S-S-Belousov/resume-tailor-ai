@@ -5,12 +5,15 @@ import smtplib
 import time
 import random
 import string
+import os
+import requests
 from email.mime.text import MIMEText
 from google import genai
 from pypdf import PdfReader
 from docx import Document
 from supabase import create_client, Client
 from datetime import datetime, timezone, timedelta
+from fpdf import FPDF
 
 # =====================================================
 # 1. НАСТРОЙКА СТРАНИЦЫ И ПЕРЕВОДЫ
@@ -43,7 +46,8 @@ TEXTS = {
         "spinner": "Нейросеть читает... ~15 секунд", "err_upload": "Сначала загрузите файл с резюме.",
         "err_job": "Вставьте текст вакансии.", "err_read": "Не удалось прочитать текст из файла.",
         "toast_ready": "✅ Анализ готов!", "ats_score": "**Оценка ATS:**",
-        "btn_download": "💾 Скачать отчёт (.md)", "btn_copy": "📋 Нажмите на иконку справа, чтобы скопировать текст",
+        "btn_download_pdf": "📥 Скачать резюме в PDF", "btn_download_md": "💾 Скачать отчёт (.md)", 
+        "btn_copy": "📋 Нажмите на иконку справа, чтобы скопировать текст",
         "pro_active": "✅ У вас активна подписка Pro до", "pro_thanks": "Спасибо за поддержку!",
         "want_more": "### 💎 Хотите больше?", "pro_desc": "Оформите подписку **Pro** — неограниченные анализы.",
         "btn_buy": "Оформить подписку Pro (499 ₽/мес)", "feedback": "💬 Обратная связь"
@@ -73,7 +77,8 @@ TEXTS = {
         "spinner": "AI is reading... ~15 seconds", "err_upload": "Please upload a resume file first.",
         "err_job": "Please paste the job description.", "err_read": "Could not read text from the file.",
         "toast_ready": "✅ Analysis ready!", "ats_score": "**ATS Match Score:**",
-        "btn_download": "💾 Download report (.md)", "btn_copy": "📋 Click the icon on the right to copy",
+        "btn_download_pdf": "📥 Download Resume as PDF", "btn_download_md": "💾 Download report (.md)", 
+        "btn_copy": "📋 Click the icon on the right to copy",
         "pro_active": "✅ Your Pro subscription is active until", "pro_thanks": "Thank you for your support!",
         "want_more": "### 💎 Want more?", "pro_desc": "Subscribe to **Pro** — unlimited analyses.",
         "btn_buy": "Subscribe to Pro ($5/mo)", "feedback": "💬 Feedback"
@@ -150,6 +155,28 @@ def extract_text(uploaded_file):
     if name.endswith(".txt"):
         return uploaded_file.read().decode("utf-8", errors="ignore")
     return ""
+
+# Скачиваем шрифт для PDF (кириллица)
+FONT_PATH = "DejaVuSans.ttf"
+if not os.path.exists(FONT_PATH):
+    font_url = "https://github.com/dolbydu/font/raw/master/unicode/DejaVuSans.ttf"
+    r = requests.get(font_url)
+    with open(FONT_PATH, "wb") as f:
+        f.write(r.content)
+
+def generate_pdf(text):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.add_font('DejaVu', '', FONT_PATH, uni=True)
+    pdf.set_font('DejaVu', '', 12)
+    
+    # Убираем markdown-символы для красивого текста
+    clean_text = text.replace("##", "").replace("**", "").replace("###", "")
+    
+    pdf.multi_cell(0, 8, txt=clean_text)
+    
+    # Возвращаем байты PDF файла
+    return bytes(pdf.output(dest='S'))
 
 # =====================================================
 # 4. АВТОРИЗАЦИЯ И СБРОС ПАРОЛЯ
@@ -303,7 +330,6 @@ with st.sidebar:
 # =====================================================
 # 6. ПРОВЕРКА ПОДПИСКИ И ЛИМИТОВ (ИЗ БАЗЫ)
 # =====================================================
-# Теперь мы забираем из базы еще и колонку free_uses
 response = supabase.table('user_subscriptions').select('is_pro', 'valid_until', 'free_uses').eq('email', USER_EMAIL).execute()
 is_pro = False
 sub_end_date = ""
@@ -334,7 +360,6 @@ MODEL_NAME = "gemini-3.8-flash"
 
 FREE_LIMIT = 2
 
-# Логика лимитов теперь зависит от базы данных
 if is_pro:
     disabled = False
     left_text = "∞ (Pro)"
@@ -429,7 +454,6 @@ if st.button(t["btn_analyze"], type="primary", disabled=disabled):
                     result = analyze(resume_text, job_text, output_lang, tone_selection)
                     st.session_state.results = result
                     
-                    # САМОЕ ВАЖНОЕ: обновляем счетчик в базе данных, если это не PRO
                     if not is_pro:
                         supabase.table('user_subscriptions').update({'free_uses': free_uses + 1}).eq('email', USER_EMAIL).execute()
                         
@@ -452,9 +476,27 @@ if st.session_state.get("results"):
         st.markdown(f"{t['ats_score']} {score}%")
         st.progress(score / 100)
     
-    col_dl, col_empty = st.columns([1, 2])
-    with col_dl:
-        st.download_button(t["btn_download"], data=st.session_state.results, file_name="resume_analysis.md", mime="text/markdown")
+    # НОВОЕ: Кнопки скачивания
+    col_pdf, col_md, col_empty = st.columns([1, 1, 1])
+    
+    with col_pdf:
+        # Генерируем PDF "на лету" только при нажатии, чтобы не грузить сервер
+        pdf_bytes = generate_pdf(st.session_state.results)
+        st.download_button(
+            label=t["btn_download_pdf"],
+            data=pdf_bytes,
+            file_name="improved_resume.pdf",
+            mime="application/pdf",
+            type="primary"
+        )
+        
+    with col_md:
+        st.download_button(
+            label=t["btn_download_md"], 
+            data=st.session_state.results, 
+            file_name="resume_analysis.md", 
+            mime="text/markdown"
+        )
     
     st.markdown(t["btn_copy"])
     st.code(st.session_state.results, language="markdown")
