@@ -2,18 +2,21 @@ import re
 import hashlib
 import streamlit as st
 import smtplib
-from email.mime.text import MIMEText
+import time
 import random
 import string
+from email.mime.text import MIMEText
 from google import genai
 from pypdf import PdfReader
 from docx import Document
 from supabase import create_client, Client
 from datetime import datetime, timezone, timedelta
 
+# =====================================================
+# 1. НАСТРОЙКА СТРАНИЦЫ И ПЕРЕВОДЫ
+# =====================================================
 st.set_page_config(page_title="ResumeTailor AI", page_icon="📄", layout="centered")
 
-# ---------- 1. ПЕРЕВОДЫ ----------
 TEXTS = {
     "ru": {
         "login_title": "🔐 Вход в ResumeTailor AI",
@@ -81,16 +84,21 @@ if 'lang' not in st.session_state:
     st.session_state.lang = "ru"
 t = TEXTS[st.session_state.lang]
 
-# ---------- 2. СЕССИЯ ----------
+# =====================================================
+# 2. УПРАВЛЕНИЕ СЕССИЕЙ (ЧЕРЕЗ URL)
+# =====================================================
 if 'user_email' not in st.session_state:
     st.session_state.user_email = None
+
 if st.session_state.user_email is None:
     url_email = st.query_params.get("user")
     if url_email:
         st.session_state.user_email = url_email
         st.rerun()
 
-# ---------- 3. SUPABASE ----------
+# =====================================================
+# 3. ПОДКЛЮЧЕНИЕ К SUPABASE И ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# =====================================================
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -102,7 +110,6 @@ except Exception as e:
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# ---------- 4. ОТПРАВКА EMAIL ----------
 def send_reset_email(to_email, code):
     try:
         smtp_server = st.secrets["SMTP_SERVER"]
@@ -123,7 +130,30 @@ def send_reset_email(to_email, code):
         st.error(f"Ошибка отправки письма: {e}")
         return False
 
-# ---------- 5. АВТОРИЗАЦИЯ И СБРОС ПАРОЛЯ ----------
+def extract_text(uploaded_file):
+    name = uploaded_file.name.lower()
+    if name.endswith(".pdf"):
+        reader = PdfReader(uploaded_file)
+        return "\n".join((page.extract_text() or "") for page in reader.pages)
+    if name.endswith(".docx"):
+        doc = Document(uploaded_file)
+        text_parts = []
+        for p in doc.paragraphs:
+            if p.text.strip():
+                text_parts.append(p.text)
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text.strip():
+                        text_parts.append(cell.text)
+        return "\n".join(text_parts)
+    if name.endswith(".txt"):
+        return uploaded_file.read().decode("utf-8", errors="ignore")
+    return ""
+
+# =====================================================
+# 4. АВТОРИЗАЦИЯ И СБРОС ПАРОЛЯ
+# =====================================================
 if not st.session_state.user_email:
     st.title(t["login_title"])
     
@@ -183,11 +213,9 @@ if not st.session_state.user_email:
             else:
                 res = supabase.table('user_subscriptions').select('email').eq('email', reset_email).execute()
                 if len(res.data) > 0:
-                    # Генерируем 6-значный код
                     code = ''.join(random.choices(string.digits, k=6))
                     expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
                     
-                    # Сохраняем в базу
                     supabase.table('user_subscriptions').update({
                         'reset_code': code,
                         'reset_code_expires': expires
@@ -228,7 +256,6 @@ if not st.session_state.user_email:
                     if db_code == input_code and expires_str:
                         expires = datetime.fromisoformat(expires_str.replace('Z', '+00:00'))
                         if expires > datetime.now(timezone.utc):
-                            # Код верный, обновляем пароль
                             new_hash = hash_password(new_pwd)
                             supabase.table('user_subscriptions').update({
                                 'password': new_hash,
@@ -252,7 +279,9 @@ if not st.session_state.user_email:
 
 USER_EMAIL = st.session_state.user_email
 
-# ---------- 6. БОКОВАЯ ПАНЕЛЬ ----------
+# =====================================================
+# 5. БОКОВАЯ ПАНЕЛЬ
+# =====================================================
 with st.sidebar:
     st.markdown(f"👤 **{t['logged_as']}:**\n{USER_EMAIL}")
     st.divider()
@@ -266,7 +295,8 @@ with st.sidebar:
         st.rerun()
         
     st.divider()
-    st.link_button(t["feedback"], "https://t.me/your_telegram_username")
+    # Замените ссылку ниже на ваш Telegram или почту
+    st.link_button(t["feedback"], "https://t.me/your_telegram_username") 
     
     st.divider()
     if st.button(t["logout"], use_container_width=True):
@@ -274,7 +304,9 @@ with st.sidebar:
         st.query_params.clear()
         st.rerun()
 
-# ---------- 7. ПРОВЕРКА ПОДПИСКИ ----------
+# =====================================================
+# 6. ПРОВЕРКА ПОДПИСКИ
+# =====================================================
 response = supabase.table('user_subscriptions').select('is_pro', 'valid_until').eq('email', USER_EMAIL).execute()
 is_pro = False
 sub_end_date = ""
@@ -288,7 +320,9 @@ if len(response.data) > 0:
             is_pro = True
             sub_end_date = valid_until.strftime("%d.%m.%Y")
 
-# ---------- 8. НЕЙРОСЕТЬ ----------
+# =====================================================
+# 7. НЕЙРОСЕТЬ И ЛОГИКА АНАЛИЗА
+# =====================================================
 try:
     GEMINI_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=GEMINI_KEY)
@@ -298,7 +332,6 @@ except Exception:
 
 MODEL_NAME = "gemini-3.8-flash"
 
-# ---------- 9. ЛИМИТЫ ----------
 FREE_LIMIT = 2
 if "used" not in st.session_state:
     st.session_state.used = 0
@@ -310,30 +343,6 @@ else:
     left = max(FREE_LIMIT - st.session_state.used, 0)
     disabled = left <= 0
     left_text = f"{left} / {FREE_LIMIT}"
-
-# ---------- 10. ФУНКЦИИ ----------
-def extract_text(uploaded_file):
-    name = uploaded_file.name.lower()
-    if name.endswith(".pdf"):
-        reader = PdfReader(uploaded_file)
-        return "\n".join((page.extract_text() or "") for page in reader.pages)
-    if name.endswith(".docx"):
-        doc = Document(uploaded_file)
-        text_parts = []
-        # Читаем обычные абзацы
-        for p in doc.paragraphs:
-            if p.text.strip():
-                text_parts.append(p.text)
-        # Читаем таблицы (часто резюме сверстаны ими)
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    if cell.text.strip():
-                        text_parts.append(cell.text)
-        return "\n".join(text_parts)
-    if name.endswith(".txt"):
-        return uploaded_file.read().decode("utf-8", errors="ignore")
-    return ""
 
 def analyze(resume_text, job_text, output_lang, tone):
     prompt = f"""You are an ATS (Applicant Tracking Systems) expert and career consultant.
@@ -366,10 +375,28 @@ Return the response STRICTLY in this markdown format (translate headers if outpu
 ## ✉️ Сопроводительное письмо / Cover Letter
 150–200 слов, {tone} tone. / 150-200 words, {tone} tone.
 """
-    response = client.models.generate_content(model=MODEL_NAME, contents=prompt)
-    return response.text
+    
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(model=MODEL_NAME, contents=prompt)
+            return response.text
+        except Exception as e:
+            if "503" in str(e) or "UNAVAILABLE" in str(e):
+                if attempt < max_retries - 1:
+                    time.sleep(3)
+                    continue
+                else:
+                    if st.session_state.lang == "ru":
+                        raise Exception("Серверы ИИ сейчас перегружены. Пожалуйста, нажмите «Анализировать» еще раз через 1-2 минуты.")
+                    else:
+                        raise Exception("AI servers are currently overloaded. Please click «Analyze» again in 1-2 minutes.")
+            else:
+                raise e
 
-# ---------- 11. ИНТЕРФЕЙС ----------
+# =====================================================
+# 8. ИНТЕРФЕЙС ПРИЛОЖЕНИЯ
+# =====================================================
 st.title("📄 ResumeTailor AI")
 
 col1, col2 = st.columns([3, 1])
@@ -409,7 +436,9 @@ if st.button(t["btn_analyze"], type="primary", disabled=disabled):
             except Exception as e:
                 st.error(f"Error: {e}")
 
-# ---------- 12. РЕЗУЛЬТАТ ----------
+# =====================================================
+# 9. РЕЗУЛЬТАТ
+# =====================================================
 if st.session_state.get("results"):
     st.divider()
     st.markdown(st.session_state.results)
@@ -428,7 +457,9 @@ if st.session_state.get("results"):
     st.markdown(t["btn_copy"])
     st.code(st.session_state.results, language="markdown")
 
-# ---------- 13. ОПЛАТА ----------
+# =====================================================
+# 10. ОПЛАТА
+# =====================================================
 st.divider()
 if is_pro:
     st.success(f"{t['pro_active']} **{sub_end_date}**. {t['pro_thanks']}")
