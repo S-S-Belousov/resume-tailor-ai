@@ -6,7 +6,6 @@ from pypdf import PdfReader
 from docx import Document
 from supabase import create_client, Client
 from datetime import datetime, timezone, timedelta
-import extra_streamlit_components as stx
 
 st.set_page_config(page_title="ResumeTailor AI", page_icon="📄", layout="centered")
 
@@ -18,6 +17,14 @@ TEXTS = {
         "email": "Ваш Email",
         "password": "Ваш Пароль",
         "btn_login": "Войти / Зарегистрироваться",
+        "forgot_password": "Забыли пароль?",
+        "reset_title": "🔑 Сброс пароля",
+        "reset_info": "Введите email, указанный при регистрации. Если аккаунт существует, вы сможете задать новый пароль.",
+        "new_password": "Новый пароль",
+        "btn_reset": "Сбросить пароль",
+        "btn_back": "Назад ко входу",
+        "reset_success": "Пароль успешно изменен! Теперь вы можете войти.",
+        "reset_not_found": "Пользователь с таким email не найден.",
         "error_fill": "Пожалуйста, заполните оба поля.",
         "error_pwd": "Неверный пароль.",
         "success_reg": "Аккаунт создан!",
@@ -52,6 +59,14 @@ TEXTS = {
         "email": "Your Email",
         "password": "Your Password",
         "btn_login": "Login / Register",
+        "forgot_password": "Forgot password?",
+        "reset_title": "🔑 Reset Password",
+        "reset_info": "Enter the email you registered with. If the account exists, you can set a new password.",
+        "new_password": "New Password",
+        "btn_reset": "Reset Password",
+        "btn_back": "Back to Login",
+        "reset_success": "Password changed successfully! You can now log in.",
+        "reset_not_found": "User with this email not found.",
         "error_fill": "Please fill in both fields.",
         "error_pwd": "Incorrect password.",
         "success_reg": "Account created!",
@@ -86,19 +101,16 @@ if 'lang' not in st.session_state:
     st.session_state.lang = "ru"
 t = TEXTS[st.session_state.lang]
 
-# ---------- 2. УПРАВЛЕНИЕ СЕССИЕЙ (COOKIES) ----------
-# Инициализируем менеджер куки на самом верху
-cookie_manager = stx.CookieManager(key="cookie_mgr")
-
-# Проверяем куки ПЕРЕД рендером страницы
+# ---------- 2. УПРАВЛЕНИЕ СЕССИЕЙ ЧЕРЕЗ URL (САМЫЙ НАДЕЖНЫЙ СПОСОБ) ----------
+# Проверяем, есть ли email в адресной строке
 if 'user_email' not in st.session_state:
     st.session_state.user_email = None
 
 if st.session_state.user_email is None:
-    saved_email = cookie_manager.get(cookie="rt_user_email")
-    if saved_email:
-        st.session_state.user_email = saved_email
-        st.rerun() # Принудительный перезапуск, чтобы сразу пустить в кабинет
+    url_email = st.query_params.get("user")
+    if url_email:
+        st.session_state.user_email = url_email
+        st.rerun()
 
 # ---------- 3. ПОДКЛЮЧЕНИЕ К SUPABASE ----------
 try:
@@ -112,40 +124,85 @@ except Exception as e:
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# ---------- 4. АВТОРИЗАЦИЯ ----------
+# ---------- 4. АВТОРИЗАЦИЯ И СБРОС ПАРОЛЯ ----------
 if not st.session_state.user_email:
     st.title(t["login_title"])
-    st.info(t["login_info"])
     
-    email_input = st.text_input(t["email"])
-    password_input = st.text_input(t["password"], type="password")
-    
-    if st.button(t["btn_login"], type="primary"):
-        if not email_input or not password_input:
-            st.error(t["error_fill"])
-        else:
-            hashed_pwd = hash_password(password_input)
-            response = supabase.table('user_subscriptions').select('*').eq('email', email_input).execute()
-            
-            if len(response.data) > 0:
-                user = response.data[0]
-                if user['password'] is None:
-                    supabase.table('user_subscriptions').update({'password': hashed_pwd}).eq('email', email_input).execute()
-                    st.session_state.user_email = email_input
-                    cookie_manager.set("rt_user_email", email_input, expires_at=datetime.now(timezone.utc) + timedelta(days=30))
-                    st.rerun()
-                elif user['password'] == hashed_pwd:
-                    st.session_state.user_email = email_input
-                    cookie_manager.set("rt_user_email", email_input, expires_at=datetime.now(timezone.utc) + timedelta(days=30))
+    # Переключатель между входом и сбросом
+    if 'show_reset' not in st.session_state:
+        st.session_state.show_reset = False
+
+    if st.session_state.show_reset:
+        # --- ФОРМА СБРОСА ПАРОЛЯ ---
+        st.subheader(t["reset_title"])
+        st.info(t["reset_info"])
+        
+        reset_email = st.text_input(t["email"], key="reset_email")
+        new_pwd = st.text_input(t["new_password"], type="password", key="reset_pwd")
+        
+        if st.button(t["btn_reset"], type="primary"):
+            if not reset_email or not new_pwd:
+                st.error(t["error_fill"])
+            else:
+                # Проверяем, есть ли такой пользователь
+                res = supabase.table('user_subscriptions').select('email').eq('email', reset_email).execute()
+                if len(res.data) > 0:
+                    # Обновляем пароль
+                    new_hash = hash_password(new_pwd)
+                    supabase.table('user_subscriptions').update({'password': new_hash}).eq('email', reset_email).execute()
+                    st.success(t["reset_success"])
+                    st.session_state.show_reset = False
                     st.rerun()
                 else:
-                    st.error(t["error_pwd"])
-            else:
-                supabase.table('user_subscriptions').insert({'email': email_input, 'password': hashed_pwd, 'is_pro': False}).execute()
-                st.session_state.user_email = email_input
-                cookie_manager.set("rt_user_email", email_input, expires_at=datetime.now(timezone.utc) + timedelta(days=30))
-                st.success(t["success_reg"])
+                    st.error(t["reset_not_found"])
+        
+        if st.button(t["btn_back"]):
+            st.session_state.show_reset = False
+            st.rerun()
+            
+    else:
+        # --- ФОРМА ВХОДА ---
+        st.info(t["login_info"])
+        
+        email_input = st.text_input(t["email"])
+        password_input = st.text_input(t["password"], type="password")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            if st.button(t["btn_login"], type="primary"):
+                if not email_input or not password_input:
+                    st.error(t["error_fill"])
+                else:
+                    hashed_pwd = hash_password(password_input)
+                    response = supabase.table('user_subscriptions').select('*').eq('email', email_input).execute()
+                    
+                    if len(response.data) > 0:
+                        user = response.data[0]
+                        if user['password'] is None:
+                            # Пользователь оплатил до регистрации
+                            supabase.table('user_subscriptions').update({'password': hashed_pwd}).eq('email', email_input).execute()
+                            st.session_state.user_email = email_input
+                            st.query_params["user"] = email_input # Сохраняем в URL
+                            st.rerun()
+                        elif user['password'] == hashed_pwd:
+                            st.session_state.user_email = email_input
+                            st.query_params["user"] = email_input # Сохраняем в URL
+                            st.rerun()
+                        else:
+                            st.error(t["error_pwd"])
+                    else:
+                        # Регистрация нового
+                        supabase.table('user_subscriptions').insert({'email': email_input, 'password': hashed_pwd, 'is_pro': False}).execute()
+                        st.session_state.user_email = email_input
+                        st.query_params["user"] = email_input # Сохраняем в URL
+                        st.success(t["success_reg"])
+                        st.rerun()
+        
+        with col2:
+            if st.button(t["forgot_password"]):
+                st.session_state.show_reset = True
                 st.rerun()
+                
     st.stop()
 
 USER_EMAIL = st.session_state.user_email
@@ -164,12 +221,12 @@ with st.sidebar:
         st.rerun()
         
     st.divider()
-    st.link_button(t["feedback"], "https://t.me/your_telegram_username") # Замените на свой ник в ТГ или mailto
+    st.link_button(t["feedback"], "https://t.me/your_telegram_username")
     
     st.divider()
     if st.button(t["logout"], use_container_width=True):
         st.session_state.user_email = None
-        cookie_manager.delete("rt_user_email")
+        st.query_params.clear() # Очищаем URL
         st.rerun()
 
 # ---------- 6. ПРОВЕРКА ПОДПИСКИ ----------
@@ -269,8 +326,6 @@ st.divider()
 
 uploaded = st.file_uploader(t["upload"], type=["pdf", "docx", "txt"])
 job_text = st.text_area(t["job_desc"], height=200)
-
-# Выбор тона
 tone_selection = st.selectbox(t["tone"], t["tone_options"])
 
 if disabled:
@@ -310,13 +365,12 @@ if st.session_state.get("results"):
         st.markdown(f"{t['ats_score']} {score}%")
         st.progress(score / 100)
     
-    # НОВОЕ: Скачивание и копирование
     col_dl, col_empty = st.columns([1, 2])
     with col_dl:
         st.download_button(t["btn_download"], data=st.session_state.results, file_name="resume_analysis.md", mime="text/markdown")
     
     st.markdown(t["btn_copy"])
-    st.code(st.session_state.results, language="markdown") # Блок с кнопкой копирования
+    st.code(st.session_state.results, language="markdown")
 
 # ---------- 12. ОПЛАТА ----------
 st.divider()
