@@ -5,10 +5,10 @@ from google import genai
 from pypdf import PdfReader
 from docx import Document
 from supabase import create_client, Client
+from datetime import datetime, timezone
 
 st.set_page_config(page_title="ResumeTailor AI", page_icon="📄", layout="centered")
 
-# ---------- 1. ПОДКЛЮЧЕНИЕ К SUPABASE ----------
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -17,11 +17,10 @@ except Exception as e:
     st.error(f"Ошибка подключения к базе данных: {e}")
     st.stop()
 
-# Функция для шифрования пароля
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# ---------- 2. АВТОРИЗАЦИЯ И РЕГИСТРАЦИЯ ----------
+# ---------- АВТОРИЗАЦИЯ ----------
 if 'user_email' not in st.session_state or not st.session_state.user_email:
     st.title("🔐 Вход в ResumeTailor AI")
     st.info("Войдите или создайте аккаунт. При регистрации вам будет доступно 2 бесплатных анализа.")
@@ -34,30 +33,21 @@ if 'user_email' not in st.session_state or not st.session_state.user_email:
             st.error("Пожалуйста, заполните оба поля.")
         else:
             hashed_pwd = hash_password(password_input)
-            # Ищем пользователя в базе
             response = supabase.table('user_subscriptions').select('*').eq('email', email_input).execute()
             
             if len(response.data) > 0:
-                # Пользователь существует, проверяем пароль
                 user = response.data[0]
                 if user['password'] is None:
-                    # Если он оплатил ДО регистрации, пароля нет. Устанавливаем ему пароль сейчас.
                     supabase.table('user_subscriptions').update({'password': hashed_pwd}).eq('email', email_input).execute()
                     st.session_state.user_email = email_input
                     st.rerun()
                 elif user['password'] == hashed_pwd:
-                    # Пароль верный
                     st.session_state.user_email = email_input
                     st.rerun()
                 else:
-                    st.error("Неверный пароль. Попробуйте еще раз.")
+                    st.error("Неверный пароль.")
             else:
-                # Нового пользователя регистрируем
-                supabase.table('user_subscriptions').insert({
-                    'email': email_input, 
-                    'password': hashed_pwd, 
-                    'is_pro': False
-                }).execute()
+                supabase.table('user_subscriptions').insert({'email': email_input, 'password': hashed_pwd, 'is_pro': False}).execute()
                 st.session_state.user_email = email_input
                 st.success("Аккаунт создан!")
                 st.rerun()
@@ -65,16 +55,26 @@ if 'user_email' not in st.session_state or not st.session_state.user_email:
 
 USER_EMAIL = st.session_state.user_email
 
-# Кнопка выхода
 if st.sidebar.button("Выйти из аккаунта"):
     st.session_state.user_email = ""
     st.rerun()
 
-# ---------- 3. ПРОВЕРКА СТАТУСА PRO ----------
-response = supabase.table('user_subscriptions').select('is_pro').eq('email', USER_EMAIL).execute()
-is_pro = len(response.data) > 0 and response.data[0]['is_pro']
+# ---------- ПРОВЕРКА ПОДПИСКИ И ДАТЫ ----------
+response = supabase.table('user_subscriptions').select('is_pro', 'valid_until').eq('email', USER_EMAIL).execute()
+is_pro = False
 
-# ---------- 4. ПОДКЛЮЧЕНИЕ НЕЙРОСЕТИ ----------
+if len(response.data) > 0:
+    user_data = response.data[0]
+    valid_until_str = user_data.get('valid_until')
+    if user_data.get('is_pro') and valid_until_str:
+        # Превращаем строку из базы в дату
+        valid_until = datetime.fromisoformat(valid_until_str.replace('Z', '+00:00'))
+        # Сравниваем с текущим временем
+        if valid_until > datetime.now(timezone.utc):
+            is_pro = True
+            sub_end_date = valid_until.strftime("%d.%m.%Y")
+
+# ---------- НЕЙРОСЕТЬ ----------
 try:
     GEMINI_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=GEMINI_KEY)
@@ -84,7 +84,7 @@ except Exception:
 
 MODEL_NAME = "gemini-3.8-flash"
 
-# ---------- 5. ЛОГИКА ЛИМИТОВ ----------
+# ---------- ЛИМИТЫ ----------
 FREE_LIMIT = 2
 if "used" not in st.session_state:
     st.session_state.used = 0
@@ -97,7 +97,7 @@ else:
     disabled = left <= 0
     left_text = f"{left} / {FREE_LIMIT}"
 
-# ---------- 6. ФУНКЦИИ ----------
+# ---------- ФУНКЦИИ ----------
 def extract_text(uploaded_file):
     name = uploaded_file.name.lower()
     if name.endswith(".pdf"):
@@ -133,7 +133,7 @@ def analyze(resume_text, job_text):
     response = client.models.generate_content(model=MODEL_NAME, contents=prompt)
     return response.text
 
-# ---------- 7. ИНТЕРФЕЙС ----------
+# ---------- ИНТЕРФЕЙС ----------
 st.title("📄 ResumeTailor AI")
 st.caption(f"Вы вошли как: {USER_EMAIL}")
 
@@ -172,7 +172,7 @@ if st.button("🔍 Анализировать", type="primary", disabled=disable
             except Exception as e:
                 st.error(f"Ошибка: {e}")
 
-# ---------- 8. ВЫВОД РЕЗУЛЬТАТА ----------
+# ---------- РЕЗУЛЬТАТ ----------
 if st.session_state.get("results"):
     st.divider()
     st.markdown(st.session_state.results)
@@ -184,10 +184,10 @@ if st.session_state.get("results"):
         st.progress(score / 100)
     st.download_button("💾 Скачать отчёт (.md)", data=st.session_state.results, file_name="resume_analysis.md", mime="text/markdown")
 
-# ---------- 9. БЛОК ОПЛАТЫ ----------
+# ---------- ОПЛАТА ----------
 st.divider()
 if is_pro:
-    st.success("✅ У вас активна подписка Pro. Спасибо за поддержку!")
+    st.success(f"✅ У вас активна подписка Pro до **{sub_end_date}**. Спасибо за поддержку!")
 else:
     st.markdown("### 💎 Хотите больше?")
     st.markdown("Оформите подписку **Pro** — неограниченные анализы.")
