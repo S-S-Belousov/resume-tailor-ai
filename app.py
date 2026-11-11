@@ -5,7 +5,7 @@ from google import genai
 from pypdf import PdfReader
 from docx import Document
 from supabase import create_client, Client
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import extra_streamlit_components as stx
 
 st.set_page_config(page_title="ResumeTailor AI", page_icon="📄", layout="centered")
