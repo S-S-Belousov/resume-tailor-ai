@@ -1,6 +1,10 @@
 import re
 import hashlib
 import streamlit as st
+import smtplib
+from email.mime.text import MIMEText
+import random
+import string
 from google import genai
 from pypdf import PdfReader
 from docx import Document
@@ -9,91 +13,67 @@ from datetime import datetime, timezone, timedelta
 
 st.set_page_config(page_title="ResumeTailor AI", page_icon="📄", layout="centered")
 
-# ---------- 1. СИСТЕМА ПЕРЕВОДОВ (i18n) ----------
+# ---------- 1. ПЕРЕВОДЫ ----------
 TEXTS = {
     "ru": {
         "login_title": "🔐 Вход в ResumeTailor AI",
         "login_info": "Войдите или создайте аккаунт. При регистрации вам доступно 2 бесплатных анализа.",
-        "email": "Ваш Email",
-        "password": "Ваш Пароль",
-        "btn_login": "Войти / Зарегистрироваться",
-        "forgot_password": "Забыли пароль?",
+        "email": "Ваш Email", "password": "Ваш Пароль",
+        "btn_login": "Войти / Зарегистрироваться", "forgot_password": "Забыли пароль?",
         "reset_title": "🔑 Сброс пароля",
-        "reset_info": "Введите email, указанный при регистрации. Если аккаунт существует, вы сможете задать новый пароль.",
-        "new_password": "Новый пароль",
-        "btn_reset": "Сбросить пароль",
-        "btn_back": "Назад ко входу",
+        "reset_step1": "Введите email, указанный при регистрации. Мы отправим вам код для сброса.",
+        "send_code": "Отправить код", "code_sent": "Код отправлен! Проверьте почту.",
+        "reset_step2": "Введите код из письма и ваш новый пароль.",
+        "code": "Код из письма (6 цифр)", "new_password": "Новый пароль",
+        "btn_reset": "Сбросить пароль", "btn_back": "Назад ко входу",
         "reset_success": "Пароль успешно изменен! Теперь вы можете войти.",
         "reset_not_found": "Пользователь с таким email не найден.",
-        "error_fill": "Пожалуйста, заполните оба поля.",
-        "error_pwd": "Неверный пароль.",
-        "success_reg": "Аккаунт создан!",
-        "logout": "Выйти из аккаунта",
-        "logged_as": "Вы вошли как",
+        "error_code": "Неверный или просроченный код.",
+        "error_fill": "Пожалуйста, заполните все поля.",
+        "error_pwd": "Неверный пароль.", "success_reg": "Аккаунт создан!",
+        "logout": "Выйти из аккаунта", "logged_as": "Вы вошли как",
         "how_it_works": "**Как это работает:** загрузи резюме → вставь текст вакансии → выбери тон → нажми «Анализировать».",
-        "left": "Осталось бесплатно",
-        "upload": "1️⃣ Загрузите резюме (PDF, DOCX или TXT)",
-        "job_desc": "2️⃣ Вставьте текст вакансии",
-        "tone": "3️⃣ Выберите стиль резюме",
+        "left": "Осталось бесплатно", "upload": "1️⃣ Загрузите резюме (PDF, DOCX или TXT)",
+        "job_desc": "2️⃣ Вставьте текст вакансии", "tone": "3️⃣ Выберите стиль резюме",
         "tone_options": ["Профессиональный", "Креативный", "Краткий", "Акцент на достижениях"],
-        "btn_analyze": "🔍 Анализировать",
-        "warn_limit": "🚫 Бесплатные попытки закончились. Оформите подписку Pro ниже.",
-        "spinner": "Нейросеть читает... ~15 секунд",
-        "err_upload": "Сначала загрузите файл с резюме.",
-        "err_job": "Вставьте текст вакансии.",
-        "err_read": "Не удалось прочитать текст из файла.",
-        "toast_ready": "✅ Анализ готов!",
-        "ats_score": "**Оценка ATS:**",
-        "btn_download": "💾 Скачать отчёт (.md)",
-        "btn_copy": "📋 Нажмите на иконку справа, чтобы скопировать текст",
-        "pro_active": "✅ У вас активна подписка Pro до",
-        "pro_thanks": "Спасибо за поддержку!",
-        "want_more": "### 💎 Хотите больше?",
-        "pro_desc": "Оформите подписку **Pro** — неограниченные анализы.",
-        "btn_buy": "Оформить подписку Pro (499 ₽/мес)",
-        "feedback": "💬 Обратная связь"
+        "btn_analyze": "🔍 Анализировать", "warn_limit": "🚫 Бесплатные попытки закончились. Оформите подписку Pro ниже.",
+        "spinner": "Нейросеть читает... ~15 секунд", "err_upload": "Сначала загрузите файл с резюме.",
+        "err_job": "Вставьте текст вакансии.", "err_read": "Не удалось прочитать текст из файла.",
+        "toast_ready": "✅ Анализ готов!", "ats_score": "**Оценка ATS:**",
+        "btn_download": "💾 Скачать отчёт (.md)", "btn_copy": "📋 Нажмите на иконку справа, чтобы скопировать текст",
+        "pro_active": "✅ У вас активна подписка Pro до", "pro_thanks": "Спасибо за поддержку!",
+        "want_more": "### 💎 Хотите больше?", "pro_desc": "Оформите подписку **Pro** — неограниченные анализы.",
+        "btn_buy": "Оформить подписку Pro (499 ₽/мес)", "feedback": "💬 Обратная связь"
     },
     "en": {
         "login_title": "🔐 Login to ResumeTailor AI",
         "login_info": "Sign in or create an account. You get 2 free analyses upon registration.",
-        "email": "Your Email",
-        "password": "Your Password",
-        "btn_login": "Login / Register",
-        "forgot_password": "Forgot password?",
+        "email": "Your Email", "password": "Your Password",
+        "btn_login": "Login / Register", "forgot_password": "Forgot password?",
         "reset_title": "🔑 Reset Password",
-        "reset_info": "Enter the email you registered with. If the account exists, you can set a new password.",
-        "new_password": "New Password",
-        "btn_reset": "Reset Password",
-        "btn_back": "Back to Login",
+        "reset_step1": "Enter your registered email. We will send you a reset code.",
+        "send_code": "Send Code", "code_sent": "Code sent! Check your email.",
+        "reset_step2": "Enter the code from the email and your new password.",
+        "code": "Code from email (6 digits)", "new_password": "New Password",
+        "btn_reset": "Reset Password", "btn_back": "Back to Login",
         "reset_success": "Password changed successfully! You can now log in.",
         "reset_not_found": "User with this email not found.",
-        "error_fill": "Please fill in both fields.",
-        "error_pwd": "Incorrect password.",
-        "success_reg": "Account created!",
-        "logout": "Log out",
-        "logged_as": "Logged in as",
+        "error_code": "Invalid or expired code.",
+        "error_fill": "Please fill in all fields.",
+        "error_pwd": "Incorrect password.", "success_reg": "Account created!",
+        "logout": "Log out", "logged_as": "Logged in as",
         "how_it_works": "**How it works:** upload resume → paste job description → choose tone → click «Analyze».",
-        "left": "Free tries left",
-        "upload": "1️⃣ Upload your resume (PDF, DOCX or TXT)",
-        "job_desc": "2️⃣ Paste the job description",
-        "tone": "3️⃣ Choose resume tone",
+        "left": "Free tries left", "upload": "1️⃣ Upload your resume (PDF, DOCX or TXT)",
+        "job_desc": "2️⃣ Paste the job description", "tone": "3️⃣ Choose resume tone",
         "tone_options": ["Professional", "Creative", "Concise", "Achievement-oriented"],
-        "btn_analyze": "🔍 Analyze",
-        "warn_limit": "🚫 Free tries exhausted. Please subscribe to Pro below.",
-        "spinner": "AI is reading... ~15 seconds",
-        "err_upload": "Please upload a resume file first.",
-        "err_job": "Please paste the job description.",
-        "err_read": "Could not read text from the file.",
-        "toast_ready": "✅ Analysis ready!",
-        "ats_score": "**ATS Match Score:**",
-        "btn_download": "💾 Download report (.md)",
-        "btn_copy": "📋 Click the icon on the right to copy",
-        "pro_active": "✅ Your Pro subscription is active until",
-        "pro_thanks": "Thank you for your support!",
-        "want_more": "### 💎 Want more?",
-        "pro_desc": "Subscribe to **Pro** — unlimited analyses.",
-        "btn_buy": "Subscribe to Pro ($5/mo)",
-        "feedback": "💬 Feedback"
+        "btn_analyze": "🔍 Analyze", "warn_limit": "🚫 Free tries exhausted. Please subscribe to Pro below.",
+        "spinner": "AI is reading... ~15 seconds", "err_upload": "Please upload a resume file first.",
+        "err_job": "Please paste the job description.", "err_read": "Could not read text from the file.",
+        "toast_ready": "✅ Analysis ready!", "ats_score": "**ATS Match Score:**",
+        "btn_download": "💾 Download report (.md)", "btn_copy": "📋 Click the icon on the right to copy",
+        "pro_active": "✅ Your Pro subscription is active until", "pro_thanks": "Thank you for your support!",
+        "want_more": "### 💎 Want more?", "pro_desc": "Subscribe to **Pro** — unlimited analyses.",
+        "btn_buy": "Subscribe to Pro ($5/mo)", "feedback": "💬 Feedback"
     }
 }
 
@@ -101,18 +81,16 @@ if 'lang' not in st.session_state:
     st.session_state.lang = "ru"
 t = TEXTS[st.session_state.lang]
 
-# ---------- 2. УПРАВЛЕНИЕ СЕССИЕЙ ЧЕРЕЗ URL (САМЫЙ НАДЕЖНЫЙ СПОСОБ) ----------
-# Проверяем, есть ли email в адресной строке
+# ---------- 2. СЕССИЯ ----------
 if 'user_email' not in st.session_state:
     st.session_state.user_email = None
-
 if st.session_state.user_email is None:
     url_email = st.query_params.get("user")
     if url_email:
         st.session_state.user_email = url_email
         st.rerun()
 
-# ---------- 3. ПОДКЛЮЧЕНИЕ К SUPABASE ----------
+# ---------- 3. SUPABASE ----------
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -124,46 +102,37 @@ except Exception as e:
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# ---------- 4. АВТОРИЗАЦИЯ И СБРОС ПАРОЛЯ ----------
+# ---------- 4. ОТПРАВКА EMAIL ----------
+def send_reset_email(to_email, code):
+    try:
+        smtp_server = st.secrets["SMTP_SERVER"]
+        smtp_port = int(st.secrets["SMTP_PORT"])
+        sender_email = st.secrets["SMTP_EMAIL"]
+        sender_password = st.secrets["SMTP_PASSWORD"]
+
+        msg = MIMEText(f"Ваш код для сброса пароля в ResumeTailor AI: {code}\nКод действует 15 минут.\n\nЕсли вы не запрашивали сброс, просто проигнорируйте это письмо.")
+        msg['Subject'] = "Сброс пароля ResumeTailor AI"
+        msg['From'] = sender_email
+        msg['To'] = to_email
+
+        with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+        return True
+    except Exception as e:
+        st.error(f"Ошибка отправки письма: {e}")
+        return False
+
+# ---------- 5. АВТОРИЗАЦИЯ И СБРОС ПАРОЛЯ ----------
 if not st.session_state.user_email:
     st.title(t["login_title"])
     
-    # Переключатель между входом и сбросом
-    if 'show_reset' not in st.session_state:
-        st.session_state.show_reset = False
+    if 'reset_step' not in st.session_state:
+        st.session_state.reset_step = 0
 
-    if st.session_state.show_reset:
-        # --- ФОРМА СБРОСА ПАРОЛЯ ---
-        st.subheader(t["reset_title"])
-        st.info(t["reset_info"])
-        
-        reset_email = st.text_input(t["email"], key="reset_email")
-        new_pwd = st.text_input(t["new_password"], type="password", key="reset_pwd")
-        
-        if st.button(t["btn_reset"], type="primary"):
-            if not reset_email or not new_pwd:
-                st.error(t["error_fill"])
-            else:
-                # Проверяем, есть ли такой пользователь
-                res = supabase.table('user_subscriptions').select('email').eq('email', reset_email).execute()
-                if len(res.data) > 0:
-                    # Обновляем пароль
-                    new_hash = hash_password(new_pwd)
-                    supabase.table('user_subscriptions').update({'password': new_hash}).eq('email', reset_email).execute()
-                    st.success(t["reset_success"])
-                    st.session_state.show_reset = False
-                    st.rerun()
-                else:
-                    st.error(t["reset_not_found"])
-        
-        if st.button(t["btn_back"]):
-            st.session_state.show_reset = False
-            st.rerun()
-            
-    else:
-        # --- ФОРМА ВХОДА ---
+    if st.session_state.reset_step == 0:
+        # --- ВХОД ---
         st.info(t["login_info"])
-        
         email_input = st.text_input(t["email"])
         password_input = st.text_input(t["password"], type="password")
         
@@ -179,35 +148,111 @@ if not st.session_state.user_email:
                     if len(response.data) > 0:
                         user = response.data[0]
                         if user['password'] is None:
-                            # Пользователь оплатил до регистрации
                             supabase.table('user_subscriptions').update({'password': hashed_pwd}).eq('email', email_input).execute()
                             st.session_state.user_email = email_input
-                            st.query_params["user"] = email_input # Сохраняем в URL
+                            st.query_params["user"] = email_input
                             st.rerun()
                         elif user['password'] == hashed_pwd:
                             st.session_state.user_email = email_input
-                            st.query_params["user"] = email_input # Сохраняем в URL
+                            st.query_params["user"] = email_input
                             st.rerun()
                         else:
                             st.error(t["error_pwd"])
                     else:
-                        # Регистрация нового
                         supabase.table('user_subscriptions').insert({'email': email_input, 'password': hashed_pwd, 'is_pro': False}).execute()
                         st.session_state.user_email = email_input
-                        st.query_params["user"] = email_input # Сохраняем в URL
+                        st.query_params["user"] = email_input
                         st.success(t["success_reg"])
                         st.rerun()
         
         with col2:
             if st.button(t["forgot_password"]):
-                st.session_state.show_reset = True
+                st.session_state.reset_step = 1
                 st.rerun()
+
+    elif st.session_state.reset_step == 1:
+        # --- СБРОС: ШАГ 1 (ВВОД EMAIL) ---
+        st.subheader(t["reset_title"])
+        st.info(t["reset_step1"])
+        
+        reset_email = st.text_input(t["email"], key="reset_email")
+        
+        if st.button(t["send_code"], type="primary"):
+            if not reset_email:
+                st.error(t["error_fill"])
+            else:
+                res = supabase.table('user_subscriptions').select('email').eq('email', reset_email).execute()
+                if len(res.data) > 0:
+                    # Генерируем 6-значный код
+                    code = ''.join(random.choices(string.digits, k=6))
+                    expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+                    
+                    # Сохраняем в базу
+                    supabase.table('user_subscriptions').update({
+                        'reset_code': code,
+                        'reset_code_expires': expires
+                    }).eq('email', reset_email).execute()
+                    
+                    if send_reset_email(reset_email, code):
+                        st.success(t["code_sent"])
+                        st.session_state.reset_step = 2
+                        st.session_state.reset_email_val = reset_email
+                        st.rerun()
+                else:
+                    st.error(t["reset_not_found"])
+                    
+        if st.button(t["btn_back"]):
+            st.session_state.reset_step = 0
+            st.rerun()
+
+    elif st.session_state.reset_step == 2:
+        # --- СБРОС: ШАГ 2 (ВВОД КОДА И НОВОГО ПАРОЛЯ) ---
+        st.subheader(t["reset_title"])
+        st.info(t["reset_step2"])
+        
+        input_code = st.text_input(t["code"], max_chars=6)
+        new_pwd = st.text_input(t["new_password"], type="password")
+        
+        if st.button(t["btn_reset"], type="primary"):
+            if not input_code or not new_pwd:
+                st.error(t["error_fill"])
+            else:
+                email = st.session_state.reset_email_val
+                res = supabase.table('user_subscriptions').select('reset_code', 'reset_code_expires').eq('email', email).execute()
                 
+                if len(res.data) > 0:
+                    user_data = res.data[0]
+                    db_code = user_data.get('reset_code')
+                    expires_str = user_data.get('reset_code_expires')
+                    
+                    if db_code == input_code and expires_str:
+                        expires = datetime.fromisoformat(expires_str.replace('Z', '+00:00'))
+                        if expires > datetime.now(timezone.utc):
+                            # Код верный, обновляем пароль
+                            new_hash = hash_password(new_pwd)
+                            supabase.table('user_subscriptions').update({
+                                'password': new_hash,
+                                'reset_code': None,
+                                'reset_code_expires': None
+                            }).eq('email', email).execute()
+                            
+                            st.success(t["reset_success"])
+                            st.session_state.reset_step = 0
+                            st.rerun()
+                        else:
+                            st.error(t["error_code"])
+                    else:
+                        st.error(t["error_code"])
+        
+        if st.button(t["btn_back"]):
+            st.session_state.reset_step = 0
+            st.rerun()
+
     st.stop()
 
 USER_EMAIL = st.session_state.user_email
 
-# ---------- 5. БОКОВАЯ ПАНЕЛЬ ----------
+# ---------- 6. БОКОВАЯ ПАНЕЛЬ ----------
 with st.sidebar:
     st.markdown(f"👤 **{t['logged_as']}:**\n{USER_EMAIL}")
     st.divider()
@@ -226,10 +271,10 @@ with st.sidebar:
     st.divider()
     if st.button(t["logout"], use_container_width=True):
         st.session_state.user_email = None
-        st.query_params.clear() # Очищаем URL
+        st.query_params.clear()
         st.rerun()
 
-# ---------- 6. ПРОВЕРКА ПОДПИСКИ ----------
+# ---------- 7. ПРОВЕРКА ПОДПИСКИ ----------
 response = supabase.table('user_subscriptions').select('is_pro', 'valid_until').eq('email', USER_EMAIL).execute()
 is_pro = False
 sub_end_date = ""
@@ -243,7 +288,7 @@ if len(response.data) > 0:
             is_pro = True
             sub_end_date = valid_until.strftime("%d.%m.%Y")
 
-# ---------- 7. НЕЙРОСЕТЬ ----------
+# ---------- 8. НЕЙРОСЕТЬ ----------
 try:
     GEMINI_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=GEMINI_KEY)
@@ -253,7 +298,7 @@ except Exception:
 
 MODEL_NAME = "gemini-3.8-flash"
 
-# ---------- 8. ЛИМИТЫ ----------
+# ---------- 9. ЛИМИТЫ ----------
 FREE_LIMIT = 2
 if "used" not in st.session_state:
     st.session_state.used = 0
@@ -266,7 +311,7 @@ else:
     disabled = left <= 0
     left_text = f"{left} / {FREE_LIMIT}"
 
-# ---------- 9. ФУНКЦИИ ----------
+# ---------- 10. ФУНКЦИИ ----------
 def extract_text(uploaded_file):
     name = uploaded_file.name.lower()
     if name.endswith(".pdf"):
@@ -313,7 +358,7 @@ Return the response STRICTLY in this markdown format (translate headers if outpu
     response = client.models.generate_content(model=MODEL_NAME, contents=prompt)
     return response.text
 
-# ---------- 10. ИНТЕРФЕЙС ----------
+# ---------- 11. ИНТЕРФЕЙС ----------
 st.title("📄 ResumeTailor AI")
 
 col1, col2 = st.columns([3, 1])
@@ -353,7 +398,7 @@ if st.button(t["btn_analyze"], type="primary", disabled=disabled):
             except Exception as e:
                 st.error(f"Error: {e}")
 
-# ---------- 11. РЕЗУЛЬТАТ ----------
+# ---------- 12. РЕЗУЛЬТАТ ----------
 if st.session_state.get("results"):
     st.divider()
     st.markdown(st.session_state.results)
@@ -372,7 +417,7 @@ if st.session_state.get("results"):
     st.markdown(t["btn_copy"])
     st.code(st.session_state.results, language="markdown")
 
-# ---------- 12. ОПЛАТА ----------
+# ---------- 13. ОПЛАТА ----------
 st.divider()
 if is_pro:
     st.success(f"{t['pro_active']} **{sub_end_date}**. {t['pro_thanks']}")
