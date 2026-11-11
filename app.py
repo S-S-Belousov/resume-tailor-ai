@@ -12,8 +12,8 @@ try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-except Exception:
-    st.error("Ошибка подключения к базе данных.")
+except Exception as e:
+    st.error(f"Ошибка подключения к базе данных: {e}")
     st.stop()
 
 # ---------- 2. АВТОРИЗАЦИЯ ПО EMAIL ----------
