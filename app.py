@@ -133,7 +133,8 @@ if st.button("🔍 Анализировать", type="primary", disabled=disable
                     result = analyze(resume_text, job_text)
                     st.session_state.results = result
                     st.session_state.used += 1
-                    st.success("Готово!")
+                    st.toast("✅ Анализ готов!")
+                    st.rerun()
             except Exception as e:
                 st.error(f"Ошибка при обращении к нейросети: {e}")
 
