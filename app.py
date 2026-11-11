@@ -3,18 +3,27 @@ import streamlit as st
 from google import genai
 from pypdf import PdfReader
 from docx import Document
-from st_paywall import add_auth  # <-- НОВОЕ
+from st_paywall import add_auth
 
 st.set_page_config(page_title="ResumeTailor AI", page_icon="📄", layout="centered")
 
-# ---------- АВТОРИЗАЦИЯ И ПОДПИСКА ----------
-# add_auth(required=False) означает: не блокировать приложение, если нет подписки.
-# После вызова в st.session_state появятся:
-# - st.session_state.email (email пользователя)
-# - st.session_state.user_subscribed (True/False)
+# ---------- 1. ПРИНУДИТЕЛЬНЫЙ ВХОД ЧЕРЕЗ GOOGLE ----------
+# Если пользователь не вошел, показываем только кнопку входа
+if not st.user.is_logged_in:
+    st.title("📄 ResumeTailor AI")
+    st.info("👋 Пожалуйста, войдите через Google, чтобы сохранять свои бесплатные попытки и получить доступ к анализу.")
+    if st.button("Войти через Google", type="primary"):
+        st.login("google")
+    st.stop() # Останавливаем код, пока человек не войдет
+
+# ---------- 2. ПОЛЬЗОВАТЕЛЬ ВОШЕЛ ----------
+# Теперь вызываем st-paywall, он проверит подписку
 add_auth(required=False)
 
-# ---------- ПОДКЛЮЧЕНИЕ НЕЙРОСЕТИ ----------
+# Показываем email пользователя
+st.caption(f"Вы вошли как: {st.user.email}")
+
+# ---------- 3. ПОДКЛЮЧЕНИЕ НЕЙРОСЕТИ ----------
 try:
     GEMINI_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=GEMINI_KEY)
@@ -24,14 +33,12 @@ except Exception:
 
 MODEL_NAME = "gemini-3.8-flash"
 
-# ---------- ЛОГИКА ЛИМИТОВ ----------
+# ---------- 4. ЛОГИКА ЛИМИТОВ ----------
 FREE_LIMIT = 2
 
-# Инициализация счётчика в session_state, если его нет
 if "used" not in st.session_state:
     st.session_state.used = 0
 
-# Если пользователь подписан — лимита нет
 if st.session_state.get("user_subscribed", False):
     disabled = False
     left_text = "∞"
@@ -40,7 +47,7 @@ else:
     disabled = left <= 0
     left_text = f"{left} / {FREE_LIMIT}"
 
-# ... (функции extract_text и analyze остаются без изменений) ...
+# ---------- 5. ФУНКЦИИ ----------
 def extract_text(uploaded_file):
     name = uploaded_file.name.lower()
     if name.endswith(".pdf"):
@@ -76,12 +83,8 @@ def analyze(resume_text, job_text):
     response = client.models.generate_content(model=MODEL_NAME, contents=prompt)
     return response.text
 
-# ---------- ИНТЕРФЕЙС ----------
+# ---------- 6. ИНТЕРФЕЙС ----------
 st.title("📄 ResumeTailor AI")
-
-# Показываем email, если вошёл
-if st.session_state.get("email"):
-    st.caption(f"Вы вошли как: {st.session_state.email}")
 
 col1, col2 = st.columns([3, 1])
 with col1:
@@ -95,7 +98,7 @@ uploaded = st.file_uploader("1️⃣ Загрузите резюме (PDF, DOCX 
 job_text = st.text_area("2️⃣ Вставьте текст вакансии", height=250)
 
 if disabled:
-    st.warning("🚫 Бесплатные попытки закончились. Оформите подписку Pro ниже.")
+    st.warning("🚫 Бесплатные попытки закончились. Оформите подписку Pro в меню слева.")
 
 if st.button("🔍 Анализировать", type="primary", disabled=disabled):
     if not uploaded:
@@ -111,7 +114,6 @@ if st.button("🔍 Анализировать", type="primary", disabled=disable
                 else:
                     result = analyze(resume_text, job_text)
                     st.session_state.results = result
-                    # Увеличиваем счётчик, только если нет подписки
                     if not st.session_state.get("user_subscribed", False):
                         st.session_state.used += 1
                     st.toast("✅ Анализ готов!")
@@ -119,7 +121,7 @@ if st.button("🔍 Анализировать", type="primary", disabled=disable
             except Exception as e:
                 st.error(f"Ошибка: {e}")
 
-# ---------- ВЫВОД РЕЗУЛЬТАТА ----------
+# ---------- 7. ВЫВОД РЕЗУЛЬТАТА ----------
 if st.session_state.get("results"):
     st.divider()
     st.markdown(st.session_state.results)
@@ -131,13 +133,13 @@ if st.session_state.get("results"):
         st.progress(score / 100)
     st.download_button("💾 Скачать отчёт (.md)", data=st.session_state.results, file_name="resume_analysis.md", mime="text/markdown")
 
-# ---------- БЛОК ОПЛАТЫ (ST-PAYWALL) ----------
+# ---------- 8. БЛОК ОПЛАТЫ ВНИЗУ ----------
 st.divider()
 if st.session_state.get("user_subscribed", False):
     st.success("✅ У вас активна подписка Pro. Спасибо за поддержку!")
 else:
     st.markdown("### 💎 Хотите больше?")
     st.markdown("Оформите подписку **Pro** — неограниченные анализы.")
-    # Кнопка ведёт на ссылку оплаты, которую мы создали в Stripe
-    stripe_link = st.secrets.get("STRIPE_LINK", "#")
+    # ИСПРАВЛЕНО: теперь ищем stripe_link_test
+    stripe_link = st.secrets.get("stripe_link_test", st.secrets.get("stripe_link", "#"))
     st.link_button("Оформить подписку Pro ($9/мес)", url=stripe_link, type="primary")
