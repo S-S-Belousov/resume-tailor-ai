@@ -50,7 +50,9 @@ TEXTS = {
         "btn_copy": "📋 Нажмите на иконку справа, чтобы скопировать текст",
         "pro_active": "✅ У вас активна подписка Pro до", "pro_thanks": "Спасибо за поддержку!",
         "want_more": "### 💎 Хотите больше?", "pro_desc": "Оформите подписку **Pro** — неограниченные анализы.",
-        "btn_buy": "Оформить подписку Pro (499 ₽/мес)", "feedback": "💬 Обратная связь"
+        "btn_buy": "Оформить подписку Pro (499 ₽/мес)", "feedback": "💬 Обратная связь",
+        "try_example": "💡 Попробовать на тестовом примере (без загрузки файла)",
+        "example_info": "Загружен пример резюме IT-специалиста. Вы можете нажать «Анализировать» или изменить текст вакансии справа."
     },
     "en": {
         "login_title": "🔐 Login to ResumeTailor AI",
@@ -81,13 +83,50 @@ TEXTS = {
         "btn_copy": "📋 Click the icon on the right to copy",
         "pro_active": "✅ Your Pro subscription is active until", "pro_thanks": "Thank you for your support!",
         "want_more": "### 💎 Want more?", "pro_desc": "Subscribe to **Pro** — unlimited analyses.",
-        "btn_buy": "Subscribe to Pro ($5/mo)", "feedback": "💬 Feedback"
+        "btn_buy": "Subscribe to Pro ($5/mo)", "feedback": "💬 Feedback",
+        "try_example": "💡 Try with example data (no file upload needed)",
+        "example_info": "Example IT resume loaded. You can click 'Analyze' or edit the job description."
     }
 }
 
 if 'lang' not in st.session_state:
     st.session_state.lang = "ru"
 t = TEXTS[st.session_state.lang]
+
+# Тестовые данные для кнопки "Попробовать пример"
+EXAMPLE_RESUME_RU = """Иван Иванов
+Python-разработчик (Middle)
+Опыт работы:
+- ООО "Ромашка" (2020-2023): Разработка бэкенда для e-commerce на Django. Увеличил скорость загрузки страниц на 40%.
+- ИП Петров (2018-2020): Верстка сайтов HTML/CSS/JS.
+Навыки: Python, Django, SQL, Git, Docker, HTML, CSS.
+Образование: МГТУ им. Баумана, Прикладная математика и информатика."""
+
+EXAMPLE_JOB_RU = """Ищем Python-разработчика.
+Требования:
+- Опыт коммерческой разработки на Python от 2 лет.
+- Уверенное знание FastAPI.
+- Опыт работы с базами данных PostgreSQL и Redis.
+- Понимание принципов REST API.
+- Опыт написания unit-тестов (pytest).
+Будет плюсом: знание Docker и Kubernetes."""
+
+EXAMPLE_RESUME_EN = """John Doe
+Python Developer
+Experience:
+- E-commerce backend developer (2020-2023) using Django. Improved page load speed by 40%.
+- Web developer (2018-2020) using HTML/CSS/JS.
+Skills: Python, Django, SQL, Git, Docker, HTML, CSS.
+Education: BS in Computer Science."""
+
+EXAMPLE_JOB_EN = """We are looking for a Python Developer.
+Requirements:
+- 2+ years of commercial experience with Python.
+- Strong knowledge of FastAPI.
+- Experience with PostgreSQL and Redis.
+- Understanding of REST API principles.
+- Experience with unit testing (pytest).
+Nice to have: Docker and Kubernetes."""
 
 # =====================================================
 # 2. УПРАВЛЕНИЕ СЕССИЕЙ (ЧЕРЕЗ URL)
@@ -159,24 +198,18 @@ def extract_text(uploaded_file):
 def generate_pdf(text):
     font_path = "DejaVuSans.ttf"
     
-    # Проверяем, что файл на месте
     if not os.path.exists(font_path):
         st.error("Ошибка: файл шрифта не найден в репозитории.")
         return b""
 
     pdf = FPDF()
     pdf.add_page()
-    
-    # Добавляем шрифт
     pdf.add_font("DejaVu", "", font_path)
     pdf.set_font("DejaVu", "", 12)
     
-    # Убираем markdown-символы для красивого текста
     clean_text = text.replace("##", "").replace("**", "").replace("###", "")
-    
     pdf.multi_cell(0, 8, text=clean_text)
     
-    # Возвращаем байты PDF файла
     return bytes(pdf.output())
 
 # =====================================================
@@ -432,36 +465,57 @@ with col2:
 
 st.divider()
 
-uploaded = st.file_uploader(t["upload"], type=["pdf", "docx", "txt"])
-job_text = st.text_area(t["job_desc"], height=200)
+# НОВОЕ: Галочка для теста
+use_example = st.checkbox(t["try_example"], value=False)
+
+if use_example:
+    st.info(t["example_info"])
+    # Берем тестовые данные в зависимости от языка
+    example_resume = EXAMPLE_RESUME_RU if st.session_state.lang == "ru" else EXAMPLE_RESUME_EN
+    example_job = EXAMPLE_JOB_RU if st.session_state.lang == "ru" else EXAMPLE_JOB_EN
+    
+    uploaded = None
+    job_text = st.text_area(t["job_desc"], value=example_job, height=200)
+    resume_text = example_resume # Передаем текст напрямую
+else:
+    uploaded = st.file_uploader(t["upload"], type=["pdf", "docx", "txt"])
+    job_text = st.text_area(t["job_desc"], height=200)
+    resume_text = None
+
 tone_selection = st.selectbox(t["tone"], t["tone_options"])
 
 if disabled:
     st.warning(t["warn_limit"])
 
 if st.button(t["btn_analyze"], type="primary", disabled=disabled):
-    if not uploaded:
-        st.error(t["err_upload"])
-    elif not job_text.strip():
+    # Если галочка не стоит, читаем файл
+    if not use_example:
+        if not uploaded:
+            st.error(t["err_upload"])
+            st.stop()
+        else:
+            resume_text = extract_text(uploaded)
+            if not resume_text.strip():
+                st.error(t["err_read"])
+                st.stop()
+            
+    if not job_text.strip():
         st.error(t["err_job"])
-    else:
-        with st.spinner(t["spinner"]):
-            try:
-                resume_text = extract_text(uploaded)
-                if not resume_text.strip():
-                    st.error(t["err_read"])
-                else:
-                    output_lang = "Russian" if st.session_state.lang == "ru" else "English"
-                    result = analyze(resume_text, job_text, output_lang, tone_selection)
-                    st.session_state.results = result
-                    
-                    if not is_pro:
-                        supabase.table('user_subscriptions').update({'free_uses': free_uses + 1}).eq('email', USER_EMAIL).execute()
-                        
-                    st.toast(t["toast_ready"])
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Error: {e}")
+        st.stop()
+        
+    with st.spinner(t["spinner"]):
+        try:
+            output_lang = "Russian" if st.session_state.lang == "ru" else "English"
+            result = analyze(resume_text, job_text, output_lang, tone_selection)
+            st.session_state.results = result
+            
+            if not is_pro:
+                supabase.table('user_subscriptions').update({'free_uses': free_uses + 1}).eq('email', USER_EMAIL).execute()
+                
+            st.toast(t["toast_ready"])
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error: {e}")
 
 # =====================================================
 # 9. РЕЗУЛЬТАТ
@@ -477,11 +531,9 @@ if st.session_state.get("results"):
         st.markdown(f"{t['ats_score']} {score}%")
         st.progress(score / 100)
     
-    # НОВОЕ: Кнопки скачивания
     col_pdf, col_md, col_empty = st.columns([1, 1, 1])
     
     with col_pdf:
-        # Генерируем PDF "на лету" только при нажатии, чтобы не грузить сервер
         pdf_bytes = generate_pdf(st.session_state.results)
         st.download_button(
             label=t["btn_download_pdf"],
